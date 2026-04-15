@@ -49,20 +49,21 @@ class ProxyApi(private val context: Context, private var network: Network? = nul
     private val gson = Gson()
 
     private val client: OkHttpClient
-        get() {
-            val builder = OkHttpClient.Builder()
-                .connectTimeout(10, TimeUnit.SECONDS)
-                .readTimeout(10, TimeUnit.SECONDS)
+    get() {
+        val builder = OkHttpClient.Builder()
+            .connectTimeout(10, TimeUnit.SECONDS)
+            .readTimeout(10, TimeUnit.SECONDS)
+            .dns(OkHttpDns())  // 关键：使用阿里云HTTPDNS
 
-            // 如果提供了 VPN 网络，则使用其 SocketFactory
-            network?.let {
-                val socketFactory = it.socketFactory
-                builder.socketFactory(socketFactory)
-                Log.d("ProxyApi", "使用 VPN 网络的 SocketFactory")
-            }
-
-            return builder.build()
+        // 如果提供了 VPN 网络，则使用其 SocketFactory
+        network?.let {
+            val socketFactory = it.socketFactory
+            builder.socketFactory(socketFactory)
+            Log.d("ProxyApi", "使用 VPN 网络的 SocketFactory")
         }
+
+        return builder.build()
+    }
 
     @Throws(IOException::class)
     fun fetchSingleProxy(): ProxyInfo {
