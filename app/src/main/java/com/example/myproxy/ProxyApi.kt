@@ -53,12 +53,14 @@ class ProxyApi(private val context: Context, private var network: Network? = nul
         val builder = OkHttpClient.Builder()
             .connectTimeout(10, TimeUnit.SECONDS)
             .readTimeout(10, TimeUnit.SECONDS)
-            .dns(OkHttpDns()) // 应用自定义 DNS
+            .dns(OkHttpDns())  // 应用阿里云 HTTPDNS
 
-        // ... 其他配置 ...
+        network?.let {
+            val socketFactory = it.socketFactory
+            builder.socketFactory(socketFactory)
+        }
         return builder.build()
     }
-
     @Throws(IOException::class)
     fun fetchSingleProxy(): ProxyInfo {
         val tradeNo = PreferencesManager.getTradeNo(context)
