@@ -22,8 +22,8 @@ class MyApp : Application() {
             .build()
         HttpDns.init(this, config)
 
-        // 预加载域名（注意：getService 需要传入 Context 和 AccountID）
-        val httpdnsService = HttpDns.getService(this, ACCOUNT_ID)
+        // 预加载域名：getService 只需要 AccountID
+        val httpdnsService = HttpDns.getService(ACCOUNT_ID)
         httpdnsService.setPreResolveHosts(listOf("v2.api.juliangip.com"))
     }
 }
