@@ -42,6 +42,54 @@ data class ProxyItem(
     @SerializedName("http_pass")
     val httpPass: String?
 )
+  // ... 其他代码保持不变 ...
+
+    private fun startVpn() {
+        try {
+            val builder = Builder()
+                .setSession("IP切换器")
+                .addAddress("10.0.0.2", 32)
+                .addRoute("0.0.0.0", 0)
+                .addDnsServer("114.114.114.114")
+                .addDnsServer("223.5.5.5")
+                .setMtu(1500)
+
+            vpnInterface?.close()
+            vpnInterface = builder.establish()
+
+            // ---------- 关键：将VPN接口传递给ProxyApi，用于保护Socket ----------
+            proxyApi.setVpnInterface(vpnInterface)
+            // -----------------------------------------------------------------
+
+            // 绑定进程到VPN网络（让其他应用流量走VPN）
+            bindProcessToVpnNetwork()
+
+            val tunInput = FileInputStream(vpnInterface!!.fileDescriptor)
+            val tunOutput = FileOutputStream(vpnInterface!!.fileDescriptor)
+
+            tun2Socks = Tun2Socks(tunInput, tunOutput, proxyApi, this)
+            tun2Socks?.start()
+
+            sendVpnStateBroadcast(true)
+            fetchAndUpdateProxyInBackground()
+            startScheduledSwitch()
+
+        } catch (e: Exception) {
+            // ... 错误处理 ...
+        }
+    }
+
+    /**
+     * 保护一个Socket，使其流量绕过VPN直接走物理网络
+     */
+    fun protectSocket(socket: java.net.Socket): Boolean {
+        return try {
+            protect(socket)
+        } catch (e: Exception) {
+            Log.e("ProxyVpnService", "protectSocket失败", e)
+            false
+        }
+    }
 
 class ProxyApi(private val context: Context, private var network: Network? = null) {
 
