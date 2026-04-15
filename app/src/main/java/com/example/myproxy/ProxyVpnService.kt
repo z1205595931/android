@@ -55,7 +55,6 @@ class ProxyVpnService : VpnService() {
             tun2Socks = Tun2Socks(tunInput, tunOutput, proxyApi, this)
             tun2Socks?.start()
 
-            // 广播 VPN 已启动
             LocalBroadcastManager.getInstance(this).sendBroadcast(Intent(ACTION_VPN_STARTED))
 
             startScheduledSwitch()
