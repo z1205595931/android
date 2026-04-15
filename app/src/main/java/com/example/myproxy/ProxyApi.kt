@@ -6,6 +6,7 @@ import com.google.gson.annotations.SerializedName
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.IOException
+import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
 
 data class ProxyInfo(
@@ -31,7 +32,7 @@ data class ProxyData(
     @SerializedName("surplus_quantity")
     val surplusQuantity: Int,
     @SerializedName("proxy_list")
-    val proxyList: List<ProxyInfo>
+    val proxyList: List<String>
 )
 
 class ProxyApi(private val context: Context) {
@@ -43,13 +44,28 @@ class ProxyApi(private val context: Context) {
 
     @Throws(IOException::class)
     fun fetchSingleProxy(): ProxyInfo {
-        val apiUrl = PreferencesManager.getApiUrl(context)
-        if (apiUrl.isBlank()) {
-            throw IOException("API 地址未设置，请在主界面填写")
+        val tradeNo = PreferencesManager.getTradeNo(context)
+        val apiKey = PreferencesManager.getApiKey(context)
+        if (tradeNo.isBlank() || apiKey.isBlank()) {
+            throw IOException("请先在主界面配置业务编号和API Key")
         }
 
+        // 动态生成签名
+        val params = mapOf(
+            "trade_no" to tradeNo,
+            "num" to "1",
+            "pt" to "2",
+            "result_type" to "json",
+            "filter" to "1",
+            "auth_info" to "1"
+        )
+        val sign = generateSign(params, apiKey)
+        
+        val url = "http://v2.api.juliangip.com/dynamic/getips?" +
+                "trade_no=$tradeNo&num=1&pt=2&result_type=json&filter=1&auth_info=1&sign=$sign"
+
         val request = Request.Builder()
-            .url(apiUrl)
+            .url(url)
             .build()
 
         client.newCall(request).execute().use { response ->
@@ -65,9 +81,34 @@ class ProxyApi(private val context: Context) {
 
             val proxyList = apiResponse.data.proxyList
             if (proxyList.isEmpty()) {
-                throw IOException("API 未返回代理数据")
+                throw IOException("API 未返回代理数据，请检查白名单或套餐余量")
             }
-            return proxyList[0]
+            return parseProxyString(proxyList[0])
+        }
+    }
+
+    private fun generateSign(params: Map<String, String>, key: String): String {
+        // 1. 按参数名字典序排序
+        val sortedParams = params.toSortedMap()
+        
+        // 2. 拼接参数字符串
+        val rawStr = sortedParams.map { "${it.key}=${it.value}" }.joinToString("&")
+        
+        // 3. 拼接key
+        val signRaw = "$rawStr&key=$key"
+        
+        // 4. MD5加密（32位小写）
+        val md = MessageDigest.getInstance("MD5")
+        val digest = md.digest(signRaw.toByteArray())
+        return digest.joinToString("") { "%02x".format(it) }
+    }
+
+    private fun parseProxyString(proxyStr: String): ProxyInfo {
+        val parts = proxyStr.split(":")
+        return when (parts.size) {
+            2 -> ProxyInfo(parts[0], parts[1].toInt(), null, null)
+            4 -> ProxyInfo(parts[0], parts[1].toInt(), parts[2], parts[3])
+            else -> throw IllegalArgumentException("Invalid proxy format: $proxyStr")
         }
     }
 }
