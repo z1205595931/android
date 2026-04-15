@@ -1,7 +1,9 @@
 package com.example.myproxy
 
 import android.content.Context
+import android.content.Intent
 import android.util.Log
+import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.util.concurrent.atomic.AtomicReference
@@ -30,7 +32,9 @@ class Tun2Socks(
                 proxyApi.fetchSingleProxy()
             } catch (e: Exception) {
                 e.printStackTrace()
-                (context as? MainActivity)?.reportError("初始化代理失败: ${e.message}")
+                LocalBroadcastManager.getInstance(context).sendBroadcast(
+                    Intent(ProxyVpnService.ACTION_ERROR).putExtra("error", "初始化代理失败: ${e.message}")
+                )
                 null
             }
             currentProxy.set(proxy)
