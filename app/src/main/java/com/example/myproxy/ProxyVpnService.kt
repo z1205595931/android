@@ -7,6 +7,9 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.NetworkRequest
 import android.net.VpnService
 import android.os.Build
 import android.os.ParcelFileDescriptor
@@ -15,11 +18,10 @@ import androidx.core.app.NotificationCompat
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import java.io.FileInputStream
 import java.io.FileOutputStream
-import java.lang.reflect.Method
-import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
+import javax.net.SocketFactory
 
 class ProxyVpnService : VpnService() {
 
@@ -27,15 +29,42 @@ class ProxyVpnService : VpnService() {
     private var tun2Socks: Tun2Socks? = null
     private lateinit var proxyApi: ProxyApi
 
-    // 用于执行网络请求的单线程池（避免主线程网络异常）
-    private val networkExecutor: ExecutorService = Executors.newSingleThreadExecutor()
-    // 用于定时切换的调度器
+    private val networkExecutor = Executors.newSingleThreadExecutor()
     private val scheduler = Executors.newScheduledThreadPool(1)
     private var switchTask: ScheduledFuture<*>? = null
 
+    // 用于保存 VPN 网络对象，供 OkHttp 使用
+    @Volatile
+    private var vpnNetwork: Network? = null
+
+    private val networkCallback = object : ConnectivityManager.NetworkCallback() {
+        override fun onAvailable(network: Network) {
+            super.onAvailable(network)
+            Log.d("ProxyVpnService", "NetworkCallback onAvailable: $network")
+            // 尝试将应用进程绑定到这个网络（VPN 网络）
+            val connectivityManager = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+            try {
+                // 绑定进程到 VPN 网络
+                connectivityManager.bindProcessToNetwork(network)
+                vpnNetwork = network
+                Log.d("ProxyVpnService", "进程绑定到网络成功: $network")
+            } catch (e: Exception) {
+                Log.e("ProxyVpnService", "绑定进程到网络失败", e)
+            }
+        }
+
+        override fun onLost(network: Network) {
+            super.onLost(network)
+            Log.d("ProxyVpnService", "NetworkCallback onLost: $network")
+            if (vpnNetwork == network) {
+                vpnNetwork = null
+            }
+        }
+    }
+
     override fun onCreate() {
         super.onCreate()
-        proxyApi = ProxyApi(this)
+        proxyApi = ProxyApi(this, vpnNetwork) // 将 network 传递给 ProxyApi
         startForeground(NOTIFICATION_ID, createNotification())
     }
 
@@ -57,8 +86,8 @@ class ProxyVpnService : VpnService() {
             vpnInterface?.close()
             vpnInterface = builder.establish()
 
-            // 绑定进程到VPN网络（可选，通过反射处理）
-            bindProcessToVpnNetwork()
+            // 注册网络回调，以便在 VPN 网络可用时绑定进程
+            registerVpnNetworkCallback()
 
             val tunInput = FileInputStream(vpnInterface!!.fileDescriptor)
             val tunOutput = FileOutputStream(vpnInterface!!.fileDescriptor)
@@ -68,8 +97,10 @@ class ProxyVpnService : VpnService() {
 
             sendVpnStateBroadcast(true)
 
-            // 立即在后台线程获取一次代理（避免主线程网络异常）
-            fetchAndUpdateProxyInBackground()
+            // 稍微延迟后获取代理，等待网络绑定完成
+            android.os.Handler(mainLooper).postDelayed({
+                fetchAndUpdateProxyInBackground()
+            }, 1000)
 
             startScheduledSwitch()
 
@@ -81,12 +112,19 @@ class ProxyVpnService : VpnService() {
         }
     }
 
-    /**
-     * 在后台线程执行代理获取与更新
-     */
+    private fun registerVpnNetworkCallback() {
+        val connectivityManager = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val request = NetworkRequest.Builder()
+            .addTransportType(NetworkCapabilities.TRANSPORT_VPN)
+            .build()
+        connectivityManager.registerNetworkCallback(request, networkCallback)
+    }
+
     private fun fetchAndUpdateProxyInBackground() {
         networkExecutor.submit {
             try {
+                // 更新 ProxyApi 中的 vpnNetwork（可能在回调中已经设置）
+                (proxyApi as? ProxyApi)?.updateVpnNetwork(vpnNetwork)
                 val newProxy = proxyApi.fetchSingleProxy()
                 tun2Socks?.updateProxy(newProxy)
                 sendIpUpdateBroadcast(newProxy)
@@ -101,41 +139,11 @@ class ProxyVpnService : VpnService() {
         }
     }
 
-    /**
-     * 启动定时切换任务（已在子线程执行）
-     */
     private fun startScheduledSwitch() {
         switchTask?.cancel(false)
         switchTask = scheduler.scheduleAtFixedRate({
             fetchAndUpdateProxyInBackground()
         }, 3, 3, TimeUnit.MINUTES)
-    }
-
-    /**
-     * 绑定进程到VPN网络（反射调用，兼容低版本编译）
-     */
-    private fun bindProcessToVpnNetwork() {
-        try {
-            val connectivityManager = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-            val fd = vpnInterface?.fileDescriptor ?: return
-
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                val networkClass = Class.forName("android.net.Network")
-                val fromFileDescriptorMethod: Method = networkClass.getMethod("fromFileDescriptor", java.io.FileDescriptor::class.java)
-                val network = fromFileDescriptorMethod.invoke(null, fd) as? Any
-
-                if (network != null) {
-                    val bindResult = connectivityManager.bindProcessToNetwork(network as android.net.Network)
-                    Log.d("ProxyVpnService", "进程绑定到VPN网络结果 (反射): $bindResult")
-                } else {
-                    Log.w("ProxyVpnService", "反射获取Network对象失败")
-                }
-            } else {
-                Log.w("ProxyVpnService", "Android版本低于M，无法绑定进程到网络")
-            }
-        } catch (e: Exception) {
-            Log.e("ProxyVpnService", "绑定进程到VPN网络失败", e)
-        }
     }
 
     private fun sendIpUpdateBroadcast(proxy: ProxyInfo) {
@@ -193,6 +201,10 @@ class ProxyVpnService : VpnService() {
         tun2Socks?.interrupt()
         vpnInterface?.close()
         sendVpnStateBroadcast(false)
+
+        val connectivityManager = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        connectivityManager.unregisterNetworkCallback(networkCallback)
+
         super.onDestroy()
     }
 
