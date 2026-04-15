@@ -194,18 +194,9 @@ class ProxyVpnService : VpnService() {
     }
 
     override fun onDestroy() {
-        switchTask?.cancel(true)
-        scheduler.shutdown()
-        networkExecutor.shutdown()
-        tun2Socks?.stopProcessing()
-        tun2Socks?.interrupt()
-        vpnInterface?.close()
-        sendVpnStateBroadcast(false)
-
-        val connectivityManager = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-        connectivityManager.unregisterNetworkCallback(networkCallback)
-
-        super.onDestroy()
+            // ... 原有清理代码 ...
+    proxyApi.setVpnInterface(null)
+    super.onDestroy()
     }
 
     companion object {
