@@ -31,19 +31,35 @@
         android:layout_marginBottom="16dp"/>
 
     <EditText
-        android:id="@+id/api_edittext"
+        android:id="@+id/trade_no_edittext"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:hint="输入代理 API 地址"
-        android:inputType="textUri"
-        android:lines="2"
+        android:hint="业务编号 (trade_no)"
+        android:inputType="text"
+        android:lines="1"
+        android:layout_marginBottom="8dp"/>
+
+    <EditText
+        android:id="@+id/api_key_edittext"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="API Key"
+        android:inputType="textPassword"
+        android:lines="1"
         android:layout_marginBottom="8dp"/>
 
     <Button
-        android:id="@+id/save_api_button"
+        android:id="@+id/save_config_button"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="保存 API 地址"
+        android:text="保存配置并连接"
+        android:layout_marginBottom="8dp"/>
+
+    <Button
+        android:id="@+id/whitelist_help_button"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="如何设置白名单？"
         android:layout_marginBottom="16dp"/>
 
     <Button
