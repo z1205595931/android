@@ -1,9 +1,7 @@
 package com.example.myproxy
 
 import android.content.Context
-import android.content.Intent
 import android.util.Log
-import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.util.concurrent.atomic.AtomicReference
@@ -11,36 +9,20 @@ import java.util.concurrent.atomic.AtomicReference
 class Tun2Socks(
     private val tunInput: FileInputStream,
     private val tunOutput: FileOutputStream,
-    private val proxyApi: ProxyApi,
+    initialProxy: ProxyInfo,
     private val context: Context
 ) : Thread() {
 
     @Volatile
     private var running = true
-
-    private val currentProxy = AtomicReference<ProxyInfo>()
+    private val currentProxy = AtomicReference(initialProxy)
 
     fun updateProxy(newProxy: ProxyInfo) {
         currentProxy.set(newProxy)
         Log.d("Tun2Socks", "代理已更新: ${newProxy.ip}:${newProxy.port}")
     }
 
-    private fun getCurrentProxy(): ProxyInfo? {
-        var proxy = currentProxy.get()
-        if (proxy == null) {
-            proxy = try {
-                proxyApi.fetchSingleProxy()
-            } catch (e: Exception) {
-                e.printStackTrace()
-                LocalBroadcastManager.getInstance(context).sendBroadcast(
-                    Intent(ProxyVpnService.ACTION_ERROR).putExtra("error", "初始化代理失败: ${e.message}")
-                )
-                null
-            }
-            currentProxy.set(proxy)
-        }
-        return proxy
-    }
+    private fun getCurrentProxy(): ProxyInfo = currentProxy.get()
 
     override fun run() {
         val packet = ByteArray(32767)
@@ -73,8 +55,7 @@ class Tun2Socks(
         val dataOffset = headerLength + tcpHeaderLength
         val data = packet.copyOfRange(dataOffset, packet.size)
 
-        val proxy = getCurrentProxy() ?: return
-
+        val proxy = getCurrentProxy()
         Thread {
             TcpProxyHandler(sourceIp, sourcePort, destIp, destPort, data).handle(proxy)
         }.start()
