@@ -1,5 +1,6 @@
 package com.example.myproxy
 
+import android.content.Context
 import android.util.Log
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -8,7 +9,8 @@ import java.util.concurrent.atomic.AtomicReference
 class Tun2Socks(
     private val tunInput: FileInputStream,
     private val tunOutput: FileOutputStream,
-    private val proxyApi: ProxyApi
+    private val proxyApi: ProxyApi,
+    private val context: Context
 ) : Thread() {
 
     @Volatile
@@ -28,6 +30,10 @@ class Tun2Socks(
                 proxyApi.fetchSingleProxy()
             } catch (e: Exception) {
                 e.printStackTrace()
+                // 发送错误广播
+                LocalBroadcastManager.getInstance(context).sendBroadcast(
+                    Intent(ProxyVpnService.ACTION_ERROR).putExtra("error", "初始化代理失败: ${e.message}")
+                )
                 null
             }
             currentProxy.set(proxy)
@@ -35,6 +41,7 @@ class Tun2Socks(
         return proxy
     }
 
+    // ... 其余 run()、processPacket() 代码保持不变（与之前相同）
     override fun run() {
         val packet = ByteArray(32767)
         while (running) {
