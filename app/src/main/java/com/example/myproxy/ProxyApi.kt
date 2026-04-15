@@ -8,28 +8,26 @@ import com.google.gson.annotations.SerializedName
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.IOException
-import java.security.MessageDigest
+import java.net.InetAddress
 import java.util.concurrent.TimeUnit
 
-// 数据类定义：代理信息
+// 代理信息数据类
 data class ProxyInfo(
     val ip: String,
     val port: Int,
-    @SerializedName("http_user")
     val username: String? = null,
-    @SerializedName("http_pass")
     val password: String? = null,
     val protocol: String = "socks5"
 )
 
-// 数据类定义：API 最外层响应
+// API 响应最外层
 data class ApiResponse(
     val code: Int,
     val msg: String,
     val data: ProxyData
 )
 
-// 数据类定义：API 响应中的 data 字段
+// data 字段
 data class ProxyData(
     val count: Int,
     @SerializedName("filter_count")
@@ -48,40 +46,38 @@ class ProxyApi(private val context: Context, private var network: Network? = nul
 
     private val gson = Gson()
 
-   private val client: OkHttpClient
-    get() {
-        val builder = OkHttpClient.Builder()
-            .connectTimeout(10, TimeUnit.SECONDS)
-            .readTimeout(10, TimeUnit.SECONDS)
-            .dns(OkHttpDns()) // 应用新版阿里云HTTPDNS
-        // ... 其他配置
-        return builder.build()
-    }
-    @Throws(IOException::class)
-    fun fetchSingleProxy(): ProxyInfo {
-        val tradeNo = PreferencesManager.getTradeNo(context)
-        val apiKey = PreferencesManager.getApiKey(context)
-        if (tradeNo.isBlank() || apiKey.isBlank()) {
-            throw IOException("请先在主界面配置业务编号和API Key")
+    private val client: OkHttpClient
+        get() {
+            val builder = OkHttpClient.Builder()
+                .connectTimeout(15, TimeUnit.SECONDS)
+                .readTimeout(15, TimeUnit.SECONDS)
+
+            // 如果提供了 VPN 网络，则使用其 SocketFactory，确保流量走 VPN
+            network?.let {
+                val socketFactory = it.socketFactory
+                builder.socketFactory(socketFactory)
+                Log.d("ProxyApi", "使用 VPN 网络的 SocketFactory")
+            }
+
+            return builder.build()
         }
 
-        val params = mapOf(
-            "trade_no" to tradeNo,
-            "num" to "1",
-            "pt" to "2",
-            "result_type" to "json",
-            "filter" to "1",
-            "auth_info" to "1"
-        )
-        val sign = generateSign(params, apiKey)
+    /**
+     * 从巨量 IP API 获取单个代理
+     * @throws IOException 网络异常或业务异常
+     */
+    @Throws(IOException::class)
+    fun fetchSingleProxy(): ProxyInfo {
+        // 直接获取用户保存的完整 API 链接（在后台生成好的，包含签名）
+        val apiUrl = PreferencesManager.getApiUrl(context)
+        if (apiUrl.isBlank()) {
+            throw IOException("请先在主界面配置完整的 API 提取链接")
+        }
 
-        val url = "http://v2.api.juliangip.com/dynamic/getips?" +
-                "trade_no=$tradeNo&num=1&pt=2&result_type=json&filter=1&auth_info=1&sign=$sign"
-
-        Log.d("ProxyApi", "请求URL: $url")
+        Log.d("ProxyApi", "请求URL: $apiUrl")
 
         val request = Request.Builder()
-            .url(url)
+            .url(apiUrl)
             .build()
 
         try {
@@ -102,7 +98,9 @@ class ProxyApi(private val context: Context, private var network: Network? = nul
                     throw IOException("API 未返回代理数据，请检查白名单或套餐余量")
                 }
 
-                val proxyInfo = parseProxyString(proxyList[0])
+                // 官方返回格式：auth_info=1 时，元素为 "ip:port:username:password"
+                val proxyStr = proxyList[0]
+                val proxyInfo = parseProxyString(proxyStr)
                 Log.d("ProxyApi", "解析成功: ${proxyInfo.ip}:${proxyInfo.port}")
                 return proxyInfo
             }
@@ -113,23 +111,15 @@ class ProxyApi(private val context: Context, private var network: Network? = nul
         }
     }
 
-    // 生成 MD5 签名
-    private fun generateSign(params: Map<String, String>, key: String): String {
-        val sortedParams = params.toSortedMap()
-        val rawStr = sortedParams.map { "${it.key}=${it.value}" }.joinToString("&")
-        val signRaw = "$rawStr&key=$key"
-        val md = MessageDigest.getInstance("MD5")
-        val digest = md.digest(signRaw.toByteArray())
-        return digest.joinToString("") { "%02x".format(it) }
-    }
-
-    // 解析代理字符串，格式为 ip:port 或 ip:port:username:password
+    /**
+     * 解析代理字符串，支持 "ip:port" 或 "ip:port:username:password"
+     */
     private fun parseProxyString(proxyStr: String): ProxyInfo {
         val parts = proxyStr.split(":")
         return when (parts.size) {
             2 -> ProxyInfo(parts[0], parts[1].toInt(), null, null)
             4 -> ProxyInfo(parts[0], parts[1].toInt(), parts[2], parts[3])
-            else -> throw IllegalArgumentException("Invalid proxy format: $proxyStr")
+            else -> throw IOException("无效的代理格式: $proxyStr")
         }
     }
 }
