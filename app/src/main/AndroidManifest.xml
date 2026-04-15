@@ -7,12 +7,12 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
 
     <application
-         android:allowBackup="true"
-    android:icon="@android:drawable/ic_lock_lock"
-    android:label="IP切换器"
-    android:theme="@style/Theme.MyProxy"
-    android:usesCleartextTraffic="true"
-    tools:targetApi="31">
+        android:allowBackup="true"
+        android:icon="@android:drawable/ic_lock_lock"
+        android:label="IP切换器"
+        android:theme="@style/Theme.MyProxy"
+        android:usesCleartextTraffic="true"
+        tools:targetApi="31">
 
         <activity
             android:name=".MainActivity"
