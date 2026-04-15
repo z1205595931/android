@@ -83,7 +83,7 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        // 设置全局异常捕获，防止闪退无提示
+        // 全局异常捕获，防止闪退无提示
         Thread.setDefaultUncaughtExceptionHandler { _, e ->
             val errorMsg = e.stackTraceToString()
             android.util.Log.e("VPN_CRASH", errorMsg)
