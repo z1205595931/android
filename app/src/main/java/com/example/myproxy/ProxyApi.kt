@@ -19,7 +19,7 @@ data class ProxyInfo(
     val protocol: String = "socks5"
 )
 
-// 巨量IP API响应结构（根据您提供的链接返回格式）
+// 巨量IP API响应结构
 data class ApiResponse(
     val code: Int,
     val msg: String,
@@ -33,12 +33,12 @@ data class ProxyData(
     @SerializedName("surplus_quantity")
     val surplusQuantity: Int,
     @SerializedName("proxy_list")
-    val proxyList: List<ProxyItem>  // 注意：您的API返回的是对象数组，每个对象包含ip、port、http_user、http_pass
+    val proxyList: List<ProxyItem>
 )
 
 data class ProxyItem(
     val ip: String,
-    val port: String,  // 注意：API返回的port是字符串，需转换为Int
+    val port: String,
     @SerializedName("http_user")
     val httpUser: String?,
     @SerializedName("http_pass")
@@ -82,9 +82,9 @@ class ProxyApi(private val context: Context, private var network: Network? = nul
 
         client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) {
-                throw IOException("HTTP ${response.code()}")
+                throw IOException("HTTP ${response.code}")
             }
-            val body = response.body()?.string() ?: throw IOException("响应体为空")
+            val body = response.body?.string() ?: throw IOException("响应体为空")
             Log.d("ProxyApi", "响应: $body")
 
             val apiResponse = gson.fromJson(body, ApiResponse::class.java)
@@ -99,7 +99,7 @@ class ProxyApi(private val context: Context, private var network: Network? = nul
 
             val item = proxyList[0]
             val port = item.port.toIntOrNull() ?: throw IOException("端口格式错误: ${item.port}")
-            
+
             return ProxyInfo(
                 ip = item.ip,
                 port = port,
