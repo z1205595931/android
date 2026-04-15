@@ -1,4 +1,3 @@
-// app/src/main/java/com/example/myproxy/MyApp.kt
 package com.example.myproxy
 
 import android.app.Application
@@ -6,21 +5,25 @@ import com.alibaba.sdk.android.httpdns.HttpDns
 import com.alibaba.sdk.android.httpdns.InitConfig
 
 class MyApp : Application() {
+
+    companion object {
+        // ⚠️ 请替换为你在阿里云 HTTPDNS 控制台获取的真实值
+        const val ACCOUNT_ID = "118094"
+        const val SECRET_KEY = "6e4e74a8ff8685da1138eab88c6032c3"
+    }
+
     override fun onCreate() {
         super.onCreate()
-        
-        // 替换为你自己的账号和密钥
-        val ACCOUNT_ID = "118094"
-        val ACCESS_KEY_ID = "6e4e74a8ff8685da1138eab88c6032c3"
 
-        // 使用官方推荐配置进行初始化[reference:1]
+        // 初始化配置
         val config = InitConfig.Builder()
             .setContext(this)
-            .setSecretKey(secretKey)
+            .setSecretKey(SECRET_KEY)
             .build()
         HttpDns.init(this, config)
 
-        // 预加载巨量IP API域名
-        HttpDns.getService(accountID).setPreResolveHosts(listOf("v2.api.juliangip.com"))
+        // 预加载域名（注意：getService 需要传入 Context 和 AccountID）
+        val httpdnsService = HttpDns.getService(this, ACCOUNT_ID)
+        httpdnsService.setPreResolveHosts(listOf("v2.api.juliangip.com"))
     }
 }
