@@ -1,10 +1,7 @@
 package com.example.myproxy
 
 import android.app.Activity
-import android.content.BroadcastReceiver
-import android.content.Context
 import android.content.Intent
-import android.content.IntentFilter
 import android.net.VpnService
 import android.os.Bundle
 import android.widget.Button
@@ -12,50 +9,33 @@ import android.widget.EditText
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
-import androidx.localbroadcastmanager.content.LocalBroadcastManager
+import androidx.lifecycle.MutableLiveData
+import androidx.lifecycle.Observer
+import android.app.AlertDialog
+import android.net.Uri
+import android.os.Handler
+import android.os.Looper
+import java.util.concurrent.Executors
 
 class MainActivity : AppCompatActivity() {
 
     private lateinit var statusText: TextView
     private lateinit var ipText: TextView
     private lateinit var errorText: TextView
-    private lateinit var apiEditText: EditText
-    private lateinit var saveApiButton: Button
+    private lateinit var tradeNoEditText: EditText
+    private lateinit var apiKeyEditText: EditText
+    private lateinit var saveConfigButton: Button
+    private lateinit var whitelistHelpButton: Button
     private lateinit var controlButton: Button
     private var isRunning = false
 
-    private val ipUpdateReceiver = object : BroadcastReceiver() {
-        override fun onReceive(context: Context?, intent: Intent?) {
-            when (intent?.action) {
-                ProxyVpnService.ACTION_IP_UPDATED -> {
-                    val ip = intent.getStringExtra("ip") ?: "未知"
-                    val port = intent.getIntExtra("port", 0)
-                    ipText.text = "当前IP: $ip:$port"
-                    errorText.text = "状态: 运行正常"
-                    isRunning = true
-                    updateUi()
-                }
-                ProxyVpnService.ACTION_ERROR -> {
-                    val errorMsg = intent.getStringExtra("error") ?: "未知错误"
-                    errorText.text = "错误: $errorMsg"
-                    ipText.text = "当前IP: 获取失败"
-                    isRunning = false
-                    updateUi()
-                }
-                ProxyVpnService.ACTION_VPN_STARTED -> {
-                    errorText.text = "状态: VPN 已连接"
-                    isRunning = true
-                    updateUi()
-                }
-                ProxyVpnService.ACTION_VPN_STOPPED -> {
-                    errorText.text = "状态: VPN 已断开"
-                    ipText.text = "当前IP: 无"
-                    isRunning = false
-                    updateUi()
-                }
-            }
-        }
-    }
+    // 用LiveData替代LocalBroadcastManager，更稳定
+    private val ipUpdateLiveData = MutableLiveData<ProxyInfo>()
+    private val errorLiveData = MutableLiveData<String>()
+    private val vpnStateLiveData = MutableLiveData<Boolean>()
+
+    private val executor = Executors.newSingleThreadExecutor()
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -64,22 +44,53 @@ class MainActivity : AppCompatActivity() {
         statusText = findViewById(R.id.status_text)
         ipText = findViewById(R.id.ip_text)
         errorText = findViewById(R.id.error_text)
-        apiEditText = findViewById(R.id.api_edittext)
-        saveApiButton = findViewById(R.id.save_api_button)
+        tradeNoEditText = findViewById(R.id.trade_no_edittext)
+        apiKeyEditText = findViewById(R.id.api_key_edittext)
+        saveConfigButton = findViewById(R.id.save_config_button)
+        whitelistHelpButton = findViewById(R.id.whitelist_help_button)
         controlButton = findViewById(R.id.control_button)
 
-        val savedApi = PreferencesManager.getApiUrl(this)
-        apiEditText.setText(savedApi)
+        // 加载已保存的配置
+        val savedTradeNo = PreferencesManager.getTradeNo(this)
+        val savedApiKey = PreferencesManager.getApiKey(this)
+        tradeNoEditText.setText(savedTradeNo)
+        apiKeyEditText.setText(savedApiKey)
 
-        saveApiButton.setOnClickListener {
-            val newApi = apiEditText.text.toString().trim()
-            if (newApi.isNotEmpty()) {
-                PreferencesManager.saveApiUrl(this, newApi)
-                Toast.makeText(this, "API 地址已保存", Toast.LENGTH_SHORT).show()
-                errorText.text = "状态: API 地址已更新"
-            } else {
-                Toast.makeText(this, "API 地址不能为空", Toast.LENGTH_SHORT).show()
+        // 观察LiveData，更新UI
+        ipUpdateLiveData.observe(this, Observer { proxy ->
+            ipText.text = "当前IP: ${proxy.ip}:${proxy.port}"
+            errorText.text = "状态: 运行正常"
+        })
+        errorLiveData.observe(this, Observer { error ->
+            errorText.text = "错误: $error"
+            ipText.text = "当前IP: 获取失败"
+        })
+        vpnStateLiveData.observe(this, Observer { running ->
+            isRunning = running
+            statusText.text = if (running) "VPN运行中" else "VPN未连接"
+            controlButton.text = if (running) "断开VPN" else "连接VPN"
+        })
+
+        saveConfigButton.setOnClickListener {
+            val tradeNo = tradeNoEditText.text.toString().trim()
+            val apiKey = apiKeyEditText.text.toString().trim()
+            if (tradeNo.isEmpty() || apiKey.isEmpty()) {
+                Toast.makeText(this, "业务编号和API Key不能为空", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
             }
+            PreferencesManager.saveTradeNo(this, tradeNo)
+            PreferencesManager.saveApiKey(this, apiKey)
+            Toast.makeText(this, "配置已保存", Toast.LENGTH_SHORT).show()
+            errorText.text = "状态: 配置已更新"
+            
+            // 如果VPN未运行，自动连接
+            if (!isRunning) {
+                startVpn()
+            }
+        }
+
+        whitelistHelpButton.setOnClickListener {
+            showWhitelistDialog()
         }
 
         controlButton.setOnClickListener {
@@ -90,25 +101,15 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        // 全局异常捕获，确保未捕获异常也显示在界面上
+        // 全局异常捕获
         Thread.setDefaultUncaughtExceptionHandler { _, e ->
             val errorMsg = e.stackTraceToString()
             android.util.Log.e("VPN_CRASH", errorMsg)
-            runOnUiThread {
+            mainHandler.post {
                 errorText.text = "崩溃: ${e.message}"
                 Toast.makeText(this, "应用崩溃: ${e.message}", Toast.LENGTH_LONG).show()
             }
         }
-
-        val filter = IntentFilter().apply {
-            addAction(ProxyVpnService.ACTION_IP_UPDATED)
-            addAction(ProxyVpnService.ACTION_ERROR)
-            addAction(ProxyVpnService.ACTION_VPN_STARTED)
-            addAction(ProxyVpnService.ACTION_VPN_STOPPED)
-        }
-        LocalBroadcastManager.getInstance(this).registerReceiver(ipUpdateReceiver, filter)
-
-        updateUi()
     }
 
     private fun startVpn() {
@@ -116,17 +117,14 @@ class MainActivity : AppCompatActivity() {
         try {
             val intent = VpnService.prepare(this)
             if (intent != null) {
-                // 需要用户授权
                 Toast.makeText(this, "请授权 VPN 连接", Toast.LENGTH_SHORT).show()
                 startActivityForResult(intent, VPN_REQUEST_CODE)
             } else {
-                // 已有权限，直接启动服务
                 errorText.text = "状态: 权限已具备，正在启动 VPN 服务..."
                 startVpnService()
             }
         } catch (e: Exception) {
-            errorText.text = "错误: VPN 准备失败 - ${e.message}"
-            Toast.makeText(this, "VPN 准备失败", Toast.LENGTH_SHORT).show()
+            errorLiveData.postValue("VPN 准备失败 - ${e.message}")
         }
     }
 
@@ -134,19 +132,26 @@ class MainActivity : AppCompatActivity() {
         try {
             val intent = Intent(this, ProxyVpnService::class.java)
             startService(intent)
+            vpnStateLiveData.postValue(true)
             Toast.makeText(this, "VPN 服务启动中...", Toast.LENGTH_SHORT).show()
         } catch (e: Exception) {
-            errorText.text = "错误: 无法启动 VPN 服务 - ${e.message}"
-            Toast.makeText(this, "服务启动失败", Toast.LENGTH_SHORT).show()
+            errorLiveData.postValue("无法启动 VPN 服务 - ${e.message}")
         }
     }
 
     private fun stopVpn() {
         stopService(Intent(this, ProxyVpnService::class.java))
-        isRunning = false
-        updateUi()
-        errorText.text = "状态: VPN 已手动断开"
+        vpnStateLiveData.postValue(false)
         ipText.text = "当前IP: 无"
+        errorText.text = "状态: VPN 已手动断开"
+    }
+
+    private fun showWhitelistDialog() {
+        AlertDialog.Builder(this)
+            .setTitle("设置白名单")
+            .setMessage("请按以下步骤操作：\n1. 在云手机浏览器中访问 ip.sb 获取公网IP\n2. 登录巨量IP官网 -> 产品管理 -> 对应订单 -> 设置白名单\n3. 粘贴刚获取的IP地址并保存\n4. 等待1-3分钟后重试")
+            .setPositiveButton("我知道了", null)
+            .show()
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
@@ -156,22 +161,23 @@ class MainActivity : AppCompatActivity() {
                 errorText.text = "状态: 用户已授权，正在启动 VPN 服务..."
                 startVpnService()
             } else {
-                errorText.text = "错误: 用户未授权 VPN 权限"
-                Toast.makeText(this, "需要 VPN 权限才能使用代理", Toast.LENGTH_LONG).show()
-                isRunning = false
-                updateUi()
+                errorLiveData.postValue("用户未授权 VPN 权限")
+                vpnStateLiveData.postValue(false)
             }
         }
     }
 
-    private fun updateUi() {
-        statusText.text = if (isRunning) "VPN运行中" else "VPN未连接"
-        controlButton.text = if (isRunning) "断开VPN" else "连接VPN"
+    // 供Service调用的静态方法，更新UI状态
+    fun updateIpInfo(proxy: ProxyInfo) {
+        ipUpdateLiveData.postValue(proxy)
     }
 
-    override fun onDestroy() {
-        LocalBroadcastManager.getInstance(this).unregisterReceiver(ipUpdateReceiver)
-        super.onDestroy()
+    fun reportError(error: String) {
+        errorLiveData.postValue(error)
+    }
+
+    fun updateVpnState(running: Boolean) {
+        vpnStateLiveData.postValue(running)
     }
 
     companion object {
