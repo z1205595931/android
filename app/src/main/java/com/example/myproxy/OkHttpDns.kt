@@ -5,9 +5,9 @@ import com.alibaba.sdk.android.httpdns.HttpDns
 import okhttp3.Dns
 import java.net.InetAddress
 
-class OkHttpDns(private val context: android.content.Context) : Dns {
+class OkHttpDns : Dns {
 
-    private val httpdnsService = HttpDns.getService(context, MyApp.ACCOUNT_ID)
+    private val httpdnsService = HttpDns.getService(MyApp.ACCOUNT_ID)
 
     override fun lookup(hostname: String): List<InetAddress> {
         return try {
