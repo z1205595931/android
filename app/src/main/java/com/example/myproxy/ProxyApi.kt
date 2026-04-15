@@ -8,10 +8,9 @@ import com.google.gson.annotations.SerializedName
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.IOException
-import java.net.InetAddress
 import java.util.concurrent.TimeUnit
 
-// 代理信息数据类
+// 代理信息
 data class ProxyInfo(
     val ip: String,
     val port: Int,
@@ -20,14 +19,13 @@ data class ProxyInfo(
     val protocol: String = "socks5"
 )
 
-// API 响应最外层
+// 巨量IP API响应结构（根据您提供的链接返回格式）
 data class ApiResponse(
     val code: Int,
     val msg: String,
     val data: ProxyData
 )
 
-// data 字段
 data class ProxyData(
     val count: Int,
     @SerializedName("filter_count")
@@ -35,7 +33,16 @@ data class ProxyData(
     @SerializedName("surplus_quantity")
     val surplusQuantity: Int,
     @SerializedName("proxy_list")
-    val proxyList: List<String>
+    val proxyList: List<ProxyItem>  // 注意：您的API返回的是对象数组，每个对象包含ip、port、http_user、http_pass
+)
+
+data class ProxyItem(
+    val ip: String,
+    val port: String,  // 注意：API返回的port是字符串，需转换为Int
+    @SerializedName("http_user")
+    val httpUser: String?,
+    @SerializedName("http_pass")
+    val httpPass: String?
 )
 
 class ProxyApi(private val context: Context, private var network: Network? = null) {
@@ -52,26 +59,19 @@ class ProxyApi(private val context: Context, private var network: Network? = nul
                 .connectTimeout(15, TimeUnit.SECONDS)
                 .readTimeout(15, TimeUnit.SECONDS)
 
-            // 如果提供了 VPN 网络，则使用其 SocketFactory，确保流量走 VPN
+            // 绑定VPN网络（确保流量走VPN通道）
             network?.let {
                 val socketFactory = it.socketFactory
                 builder.socketFactory(socketFactory)
-                Log.d("ProxyApi", "使用 VPN 网络的 SocketFactory")
             }
-
             return builder.build()
         }
 
-    /**
-     * 从巨量 IP API 获取单个代理
-     * @throws IOException 网络异常或业务异常
-     */
     @Throws(IOException::class)
     fun fetchSingleProxy(): ProxyInfo {
-        // 直接获取用户保存的完整 API 链接（在后台生成好的，包含签名）
         val apiUrl = PreferencesManager.getApiUrl(context)
         if (apiUrl.isBlank()) {
-            throw IOException("请先在主界面配置完整的 API 提取链接")
+            throw IOException("请先在主界面配置API提取链接")
         }
 
         Log.d("ProxyApi", "请求URL: $apiUrl")
@@ -80,46 +80,33 @@ class ProxyApi(private val context: Context, private var network: Network? = nul
             .url(apiUrl)
             .build()
 
-        try {
-            client.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) {
-                    throw IOException("HTTP 请求失败: ${response.code()}")
-                }
-                val body = response.body()?.string() ?: throw IOException("响应体为空")
-                Log.d("ProxyApi", "响应JSON: $body")
-
-                val apiResponse = gson.fromJson(body, ApiResponse::class.java)
-                if (apiResponse.code != 200) {
-                    throw IOException("API 业务错误: ${apiResponse.msg}")
-                }
-
-                val proxyList = apiResponse.data.proxyList
-                if (proxyList.isEmpty()) {
-                    throw IOException("API 未返回代理数据，请检查白名单或套餐余量")
-                }
-
-                // 官方返回格式：auth_info=1 时，元素为 "ip:port:username:password"
-                val proxyStr = proxyList[0]
-                val proxyInfo = parseProxyString(proxyStr)
-                Log.d("ProxyApi", "解析成功: ${proxyInfo.ip}:${proxyInfo.port}")
-                return proxyInfo
+        client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) {
+                throw IOException("HTTP ${response.code()}")
             }
-        } catch (e: IOException) {
-            throw e
-        } catch (e: Exception) {
-            throw IOException("网络请求异常: ${e.javaClass.simpleName} - ${e.message}", e)
-        }
-    }
+            val body = response.body()?.string() ?: throw IOException("响应体为空")
+            Log.d("ProxyApi", "响应: $body")
 
-    /**
-     * 解析代理字符串，支持 "ip:port" 或 "ip:port:username:password"
-     */
-    private fun parseProxyString(proxyStr: String): ProxyInfo {
-        val parts = proxyStr.split(":")
-        return when (parts.size) {
-            2 -> ProxyInfo(parts[0], parts[1].toInt(), null, null)
-            4 -> ProxyInfo(parts[0], parts[1].toInt(), parts[2], parts[3])
-            else -> throw IOException("无效的代理格式: $proxyStr")
+            val apiResponse = gson.fromJson(body, ApiResponse::class.java)
+            if (apiResponse.code != 200) {
+                throw IOException("API错误: ${apiResponse.msg}")
+            }
+
+            val proxyList = apiResponse.data.proxyList
+            if (proxyList.isEmpty()) {
+                throw IOException("未返回代理数据，请检查白名单或套餐余量")
+            }
+
+            val item = proxyList[0]
+            val port = item.port.toIntOrNull() ?: throw IOException("端口格式错误: ${item.port}")
+            
+            return ProxyInfo(
+                ip = item.ip,
+                port = port,
+                username = item.httpUser,
+                password = item.httpPass,
+                protocol = "socks5"
+            )
         }
     }
 }
