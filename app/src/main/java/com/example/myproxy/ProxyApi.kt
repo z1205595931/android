@@ -51,7 +51,6 @@ class ProxyApi(private val context: Context) {
             throw IOException("请先在主界面配置业务编号和API Key")
         }
 
-        // 动态生成签名
         val params = mapOf(
             "trade_no" to tradeNo,
             "num" to "1",
