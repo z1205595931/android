@@ -53,9 +53,12 @@ class ProxyApi(private val context: Context, private var network: Network? = nul
         val builder = OkHttpClient.Builder()
             .connectTimeout(10, TimeUnit.SECONDS)
             .readTimeout(10, TimeUnit.SECONDS)
-            .dns(OkHttpDns(context))  // 关键步骤：应用自定义DNS解析器
+            .dns(OkHttpDns())  // 应用阿里云HTTPDNS
 
-        // ... 你原有的其他配置 (如 socketFactory) ...
+        network?.let {
+            val socketFactory = it.socketFactory
+            builder.socketFactory(socketFactory)
+        }
         return builder.build()
     }
 
