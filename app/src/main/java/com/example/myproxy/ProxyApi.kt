@@ -9,6 +9,7 @@ import okhttp3.Request
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 
+// 代理信息
 data class ProxyInfo(
     val ip: String,
     val port: Int,
@@ -17,6 +18,7 @@ data class ProxyInfo(
     val protocol: String = "socks5"
 )
 
+// 巨量IP API 响应结构
 data class ApiResponse(
     val code: Int,
     val msg: String,
@@ -30,16 +32,7 @@ data class ProxyData(
     @SerializedName("surplus_quantity")
     val surplusQuantity: Int,
     @SerializedName("proxy_list")
-    val proxyList: List<ProxyItem>
-)
-
-data class ProxyItem(
-    val ip: String,
-    val port: String,
-    @SerializedName("http_user")
-    val httpUser: String?,
-    @SerializedName("http_pass")
-    val httpPass: String?
+    val proxyList: List<String>   // ⚠️ 重要：返回的是字符串数组，不是对象数组
 )
 
 class ProxyApi(private val context: Context) {
@@ -58,7 +51,7 @@ class ProxyApi(private val context: Context) {
             throw IOException("请先在主界面配置API提取链接")
         }
 
-        // ⚠️ 请替换为您 ping v2.api.juliangip.com 得到的真实 IP
+        // 静态IP直连，请替换为您 ping 到的真实 IP
         val API_IP = "123.6.195.38"
         val apiUrl = originalUrl.replace("v2.api.juliangip.com", API_IP)
 
@@ -86,16 +79,14 @@ class ProxyApi(private val context: Context) {
                 throw IOException("未返回代理数据，请检查白名单或套餐余量")
             }
 
-            val item = proxyList[0]
-            val port = item.port.toIntOrNull() ?: throw IOException("端口格式错误: ${item.port}")
-
-            return ProxyInfo(
-                ip = item.ip,
-                port = port,
-                username = item.httpUser,
-                password = item.httpPass,
-                protocol = "socks5"
-            )
+            // 解析字符串：格式为 "ip:port" 或 "ip:port:username:password"
+            val proxyStr = proxyList[0]
+            val parts = proxyStr.split(":")
+            return when (parts.size) {
+                2 -> ProxyInfo(parts[0], parts[1].toInt(), null, null)
+                4 -> ProxyInfo(parts[0], parts[1].toInt(), parts[2], parts[3])
+                else -> throw IOException("无效的代理格式: $proxyStr")
+            }
         }
     }
 }
