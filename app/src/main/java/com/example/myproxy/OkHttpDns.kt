@@ -1,3 +1,4 @@
+// 文件：app/src/main/java/com/example/myproxy/OkHttpDns.kt
 package com.example.myproxy
 
 import android.util.Log
@@ -9,7 +10,7 @@ class OkHttpDns : Dns {
 
     override fun lookup(hostname: String): List<InetAddress> {
         return try {
-            // 从 HTTPDNS 缓存获取 IPv4 地址
+            // 1. 优先从HTTPDNS缓存获取IPv4地址
             val ips = DNSResolver.getInstance().getIpv4ByHostFromCache(hostname, true)
             if (!ips.isNullOrEmpty()) {
                 val addresses = mutableListOf<InetAddress>()
@@ -25,7 +26,7 @@ class OkHttpDns : Dns {
                     return addresses
                 }
             }
-            // 降级到系统 DNS
+            // 2. 降级到系统DNS
             Log.w("OkHttpDns", "HTTPDNS cache miss for $hostname, fallback to system DNS.")
             Dns.SYSTEM.lookup(hostname)
         } catch (e: Exception) {
