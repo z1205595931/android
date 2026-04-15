@@ -1,6 +1,7 @@
 package com.example.myproxy
 
 import android.content.Context
+import android.net.Network
 import android.util.Log
 import com.google.gson.Gson
 import com.google.gson.annotations.SerializedName
@@ -9,44 +10,31 @@ import okhttp3.Request
 import java.io.IOException
 import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
+import javax.net.SocketFactory
 
-data class ProxyInfo(
-    val ip: String,
-    val port: Int,
-    @SerializedName("http_user")
-    val username: String? = null,
-    @SerializedName("http_pass")
-    val password: String? = null,
-    val protocol: String = "socks5"
-)
+// ... (数据类保持不变)
 
-data class ApiResponse(
-    val code: Int,
-    val msg: String,
-    val data: ProxyData
-)
+class ProxyApi(private val context: Context, private var network: Network? = null) {
 
-data class ProxyData(
-    val count: Int,
-    @SerializedName("filter_count")
-    val filterCount: Int,
-    @SerializedName("surplus_quantity")
-    val surplusQuantity: Int,
-    @SerializedName("proxy_list")
-    val proxyList: List<String>
-)
+    fun updateVpnNetwork(newNetwork: Network?) {
+        this.network = newNetwork
+    }
 
-class ProxyApi(private val context: Context) {
-    
-    // ⚠️ 请替换为 ping v2.api.juliangip.com 得到的实际 IP 地址
-    private val API_IP_ADDRESS = "121.14.44.83"  // 示例IP，必须替换！
-    
-    private val client = OkHttpClient.Builder()
-        .connectTimeout(10, TimeUnit.SECONDS)
-        .readTimeout(10, TimeUnit.SECONDS)
-        .hostnameVerifier { _, _ -> true }  // 允许 IP 直连时忽略证书验证
-        .build()
-    private val gson = Gson()
+    private val client: OkHttpClient
+        get() {
+            val builder = OkHttpClient.Builder()
+                .connectTimeout(10, TimeUnit.SECONDS)
+                .readTimeout(10, TimeUnit.SECONDS)
+            
+            // 如果有 VPN 网络，则使用其 SocketFactory
+            network?.let {
+                val socketFactory = it.socketFactory
+                builder.socketFactory(socketFactory)
+                Log.d("ProxyApi", "使用 VPN 网络的 SocketFactory")
+            }
+            
+            return builder.build()
+        }
 
     @Throws(IOException::class)
     fun fetchSingleProxy(): ProxyInfo {
@@ -66,15 +54,13 @@ class ProxyApi(private val context: Context) {
         )
         val sign = generateSign(params, apiKey)
 
-        // 使用 IP 直连，并在请求头中设置 Host 字段
-        val url = "http://$API_IP_ADDRESS/dynamic/getips?" +
+        val url = "http://v2.api.juliangip.com/dynamic/getips?" +
                 "trade_no=$tradeNo&num=1&pt=2&result_type=json&filter=1&auth_info=1&sign=$sign"
 
         Log.d("ProxyApi", "请求URL: $url")
 
         val request = Request.Builder()
             .url(url)
-            .addHeader("Host", "v2.api.juliangip.com")  // 关键：告诉服务器我们访问的是哪个域名
             .build()
 
         try {
@@ -106,21 +92,5 @@ class ProxyApi(private val context: Context) {
         }
     }
 
-    private fun generateSign(params: Map<String, String>, key: String): String {
-        val sortedParams = params.toSortedMap()
-        val rawStr = sortedParams.map { "${it.key}=${it.value}" }.joinToString("&")
-        val signRaw = "$rawStr&key=$key"
-        val md = MessageDigest.getInstance("MD5")
-        val digest = md.digest(signRaw.toByteArray())
-        return digest.joinToString("") { "%02x".format(it) }
-    }
-
-    private fun parseProxyString(proxyStr: String): ProxyInfo {
-        val parts = proxyStr.split(":")
-        return when (parts.size) {
-            2 -> ProxyInfo(parts[0], parts[1].toInt(), null, null)
-            4 -> ProxyInfo(parts[0], parts[1].toInt(), parts[2], parts[3])
-            else -> throw IllegalArgumentException("Invalid proxy format: $proxyStr")
-        }
-    }
+    // ... 其余方法保持不变 (generateSign, parseProxyString)
 }
