@@ -32,18 +32,26 @@ class MainActivity : AppCompatActivity() {
                     val port = intent.getIntExtra("port", 0)
                     ipText.text = "当前IP: $ip:$port"
                     errorText.text = "状态: 运行正常"
+                    isRunning = true
+                    updateUi()
                 }
                 ProxyVpnService.ACTION_ERROR -> {
                     val errorMsg = intent.getStringExtra("error") ?: "未知错误"
                     errorText.text = "错误: $errorMsg"
                     ipText.text = "当前IP: 获取失败"
+                    isRunning = false
+                    updateUi()
                 }
                 ProxyVpnService.ACTION_VPN_STARTED -> {
                     errorText.text = "状态: VPN 已连接"
+                    isRunning = true
+                    updateUi()
                 }
                 ProxyVpnService.ACTION_VPN_STOPPED -> {
                     errorText.text = "状态: VPN 已断开"
                     ipText.text = "当前IP: 无"
+                    isRunning = false
+                    updateUi()
                 }
             }
         }
@@ -60,7 +68,6 @@ class MainActivity : AppCompatActivity() {
         saveApiButton = findViewById(R.id.save_api_button)
         controlButton = findViewById(R.id.control_button)
 
-        // 加载已保存的 API 地址
         val savedApi = PreferencesManager.getApiUrl(this)
         apiEditText.setText(savedApi)
 
@@ -83,7 +90,7 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        // 全局异常捕获，防止闪退无提示
+        // 全局异常捕获，确保未捕获异常也显示在界面上
         Thread.setDefaultUncaughtExceptionHandler { _, e ->
             val errorMsg = e.stackTraceToString()
             android.util.Log.e("VPN_CRASH", errorMsg)
@@ -105,11 +112,32 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun startVpn() {
-        val intent = VpnService.prepare(this)
-        if (intent != null) {
-            startActivityForResult(intent, VPN_REQUEST_CODE)
-        } else {
-            onActivityResult(VPN_REQUEST_CODE, RESULT_OK, null)
+        errorText.text = "状态: 正在检查 VPN 权限..."
+        try {
+            val intent = VpnService.prepare(this)
+            if (intent != null) {
+                // 需要用户授权
+                Toast.makeText(this, "请授权 VPN 连接", Toast.LENGTH_SHORT).show()
+                startActivityForResult(intent, VPN_REQUEST_CODE)
+            } else {
+                // 已有权限，直接启动服务
+                errorText.text = "状态: 权限已具备，正在启动 VPN 服务..."
+                startVpnService()
+            }
+        } catch (e: Exception) {
+            errorText.text = "错误: VPN 准备失败 - ${e.message}"
+            Toast.makeText(this, "VPN 准备失败", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun startVpnService() {
+        try {
+            val intent = Intent(this, ProxyVpnService::class.java)
+            startService(intent)
+            Toast.makeText(this, "VPN 服务启动中...", Toast.LENGTH_SHORT).show()
+        } catch (e: Exception) {
+            errorText.text = "错误: 无法启动 VPN 服务 - ${e.message}"
+            Toast.makeText(this, "服务启动失败", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -117,17 +145,22 @@ class MainActivity : AppCompatActivity() {
         stopService(Intent(this, ProxyVpnService::class.java))
         isRunning = false
         updateUi()
+        errorText.text = "状态: VPN 已手动断开"
+        ipText.text = "当前IP: 无"
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode == VPN_REQUEST_CODE && resultCode == Activity.RESULT_OK) {
-            val intent = Intent(this, ProxyVpnService::class.java)
-            startService(intent)
-            isRunning = true
-            updateUi()
-        } else {
-            errorText.text = "状态: 用户未授权 VPN 权限"
+        if (requestCode == VPN_REQUEST_CODE) {
+            if (resultCode == Activity.RESULT_OK) {
+                errorText.text = "状态: 用户已授权，正在启动 VPN 服务..."
+                startVpnService()
+            } else {
+                errorText.text = "错误: 用户未授权 VPN 权限"
+                Toast.makeText(this, "需要 VPN 权限才能使用代理", Toast.LENGTH_LONG).show()
+                isRunning = false
+                updateUi()
+            }
         }
     }
 
