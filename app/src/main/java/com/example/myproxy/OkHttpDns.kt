@@ -9,11 +9,11 @@ class OkHttpDns : Dns {
 
     override fun lookup(hostname: String): List<InetAddress> {
         return try {
-            // 使用同步非阻塞方式解析，优先返回缓存
-            val result = DNSResolver.getInstance().getIpsByHostAsync(hostname)
-            if (result != null && result.ips != null && result.ips!!.isNotEmpty()) {
+            // 从 HTTPDNS 缓存获取 IPv4 地址
+            val ips = DNSResolver.getInstance().getIpv4ByHostFromCache(hostname, true)
+            if (!ips.isNullOrEmpty()) {
                 val addresses = mutableListOf<InetAddress>()
-                for (ip in result.ips!!) {
+                for (ip in ips) {
                     try {
                         addresses.add(InetAddress.getByName(ip))
                     } catch (e: Exception) {
@@ -25,7 +25,8 @@ class OkHttpDns : Dns {
                     return addresses
                 }
             }
-            Log.w("OkHttpDns", "HTTPDNS failed for $hostname, fallback to system DNS.")
+            // 降级到系统 DNS
+            Log.w("OkHttpDns", "HTTPDNS cache miss for $hostname, fallback to system DNS.")
             Dns.SYSTEM.lookup(hostname)
         } catch (e: Exception) {
             Log.e("OkHttpDns", "HTTPDNS lookup error for $hostname", e)
