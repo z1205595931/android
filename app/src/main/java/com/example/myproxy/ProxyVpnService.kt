@@ -8,6 +8,7 @@ import android.content.Intent
 import android.net.VpnService
 import android.os.Build
 import android.os.ParcelFileDescriptor
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -41,8 +42,8 @@ class ProxyVpnService : VpnService() {
                 .setSession("IP切换器")
                 .addAddress("10.0.0.2", 32)
                 .addRoute("0.0.0.0", 0)
-                .addDnsServer("8.8.8.8")
-                .addDnsServer("8.8.4.4")
+                .addDnsServer("114.114.114.114")  // 改用国内DNS
+                .addDnsServer("223.5.5.5")
                 .setMtu(1500)
 
             vpnInterface?.close()
@@ -54,29 +55,40 @@ class ProxyVpnService : VpnService() {
             tun2Socks = Tun2Socks(tunInput, tunOutput, proxyApi, this)
             tun2Socks?.start()
 
-            // 通知MainActivity更新状态
+            // 通知界面 VPN 已启动
             (applicationContext as? MainActivity)?.updateVpnState(true)
 
+            // ---------- 立即获取一次代理 IP ----------
+            fetchAndUpdateProxy()
+
+            // 启动定时切换
             startScheduledSwitch()
 
         } catch (e: Exception) {
             e.printStackTrace()
+            Log.e("ProxyVpnService", "VPN启动失败", e)
             (applicationContext as? MainActivity)?.reportError("VPN 启动失败: ${e.message}")
             stopSelf()
+        }
+    }
+
+    private fun fetchAndUpdateProxy() {
+        try {
+            val newProxy = proxyApi.fetchSingleProxy()
+            tun2Socks?.updateProxy(newProxy)
+            (applicationContext as? MainActivity)?.updateIpInfo(newProxy)
+            Log.d("ProxyVpnService", "首次获取代理成功: ${newProxy.ip}:${newProxy.port}")
+        } catch (e: Exception) {
+            e.printStackTrace()
+            Log.e("ProxyVpnService", "首次获取代理失败", e)
+            (applicationContext as? MainActivity)?.reportError("首次获取代理失败: ${e.message}")
         }
     }
 
     private fun startScheduledSwitch() {
         switchTask?.cancel(false)
         switchTask = scheduler.scheduleAtFixedRate({
-            try {
-                val newProxy = proxyApi.fetchSingleProxy()
-                tun2Socks?.updateProxy(newProxy)
-                (applicationContext as? MainActivity)?.updateIpInfo(newProxy)
-            } catch (e: Exception) {
-                e.printStackTrace()
-                (applicationContext as? MainActivity)?.reportError("获取代理失败: ${e.message}")
-            }
+            fetchAndUpdateProxy()
         }, 3, 3, TimeUnit.MINUTES)
     }
 
