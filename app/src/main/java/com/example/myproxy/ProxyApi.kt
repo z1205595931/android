@@ -10,7 +10,6 @@ import okhttp3.Request
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 
-// 代理信息
 data class ProxyInfo(
     val ip: String,
     val port: Int,
@@ -19,7 +18,6 @@ data class ProxyInfo(
     val protocol: String = "socks5"
 )
 
-// 巨量IP API响应结构
 data class ApiResponse(
     val code: Int,
     val msg: String,
@@ -58,26 +56,30 @@ class ProxyApi(private val context: Context, private var network: Network? = nul
             val builder = OkHttpClient.Builder()
                 .connectTimeout(15, TimeUnit.SECONDS)
                 .readTimeout(15, TimeUnit.SECONDS)
-
-            // 绑定VPN网络（确保流量走VPN通道）
             network?.let {
-                val socketFactory = it.socketFactory
-                builder.socketFactory(socketFactory)
+                builder.socketFactory(it.socketFactory)
             }
             return builder.build()
         }
 
     @Throws(IOException::class)
     fun fetchSingleProxy(): ProxyInfo {
-        val apiUrl = PreferencesManager.getApiUrl(context)
-        if (apiUrl.isBlank()) {
-            throw IOException("请先在主界面配置API提取链接")
+        // 获取用户保存的API链接
+        val originalUrl = PreferencesManager.getApiUrl(context)
+        if (originalUrl.isBlank()) {
+            throw IOException("请先配置API提取链接")
         }
 
-        Log.d("ProxyApi", "请求URL: $apiUrl")
+        // ⚠️ 将域名替换为您ping到的真实IP地址（示例为123.58.243.40，请务必换成您自己ping出的IP）
+        val API_IP = "123.6.195.38"  // <--- 这里替换成您ping到的IP
+        val apiUrl = originalUrl.replace("v2.api.juliangip.com", API_IP)
+
+        Log.d("ProxyApi", "原始URL: $originalUrl")
+        Log.d("ProxyApi", "直连URL: $apiUrl")
 
         val request = Request.Builder()
             .url(apiUrl)
+            .addHeader("Host", "v2.api.juliangip.com")  // 必须添加Host头，否则服务器不知道访问哪个站点
             .build()
 
         client.newCall(request).execute().use { response ->
