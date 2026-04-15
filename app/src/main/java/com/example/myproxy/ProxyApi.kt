@@ -43,7 +43,6 @@ class ProxyApi(private val context: Context) {
 
     @Throws(IOException::class)
     fun fetchSingleProxy(): ProxyInfo {
-        // 从 SharedPreferences 获取用户保存的 API 地址
         val apiUrl = PreferencesManager.getApiUrl(context)
         if (apiUrl.isBlank()) {
             throw IOException("API 地址未设置，请在主界面填写")
