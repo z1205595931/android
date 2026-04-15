@@ -1,7 +1,10 @@
 package com.example.myproxy
 
 import android.app.Activity
+import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.net.VpnService
 import android.os.Bundle
 import android.widget.Button
@@ -9,12 +12,10 @@ import android.widget.EditText
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
-import androidx.lifecycle.MutableLiveData
-import androidx.lifecycle.Observer
+import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import android.app.AlertDialog
 import android.os.Handler
 import android.os.Looper
-import java.util.concurrent.Executors
 
 class MainActivity : AppCompatActivity() {
 
@@ -28,11 +29,29 @@ class MainActivity : AppCompatActivity() {
     private lateinit var controlButton: Button
     private var isRunning = false
 
-    private val ipUpdateLiveData = MutableLiveData<ProxyInfo>()
-    private val errorLiveData = MutableLiveData<String>()
-    private val vpnStateLiveData = MutableLiveData<Boolean>()
-
     private val mainHandler = Handler(Looper.getMainLooper())
+
+    private val broadcastReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            when (intent?.action) {
+                ProxyVpnService.ACTION_IP_UPDATED -> {
+                    val ip = intent.getStringExtra("ip") ?: return
+                    val port = intent.getIntExtra("port", 0)
+                    updateIpInfo(ProxyInfo(ip, port))
+                }
+                ProxyVpnService.ACTION_ERROR -> {
+                    val error = intent.getStringExtra("error") ?: "未知错误"
+                    reportError(error)
+                }
+                ProxyVpnService.ACTION_VPN_STARTED -> {
+                    updateVpnState(true)
+                }
+                ProxyVpnService.ACTION_VPN_STOPPED -> {
+                    updateVpnState(false)
+                }
+            }
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -51,20 +70,6 @@ class MainActivity : AppCompatActivity() {
         val savedApiKey = PreferencesManager.getApiKey(this)
         tradeNoEditText.setText(savedTradeNo)
         apiKeyEditText.setText(savedApiKey)
-
-        ipUpdateLiveData.observe(this, Observer { proxy ->
-            ipText.text = "当前IP: ${proxy.ip}:${proxy.port}"
-            errorText.text = "状态: 运行正常"
-        })
-        errorLiveData.observe(this, Observer { error ->
-            errorText.text = "错误: $error"
-            ipText.text = "当前IP: 获取失败"
-        })
-        vpnStateLiveData.observe(this, Observer { running ->
-            isRunning = running
-            statusText.text = if (running) "VPN运行中" else "VPN未连接"
-            controlButton.text = if (running) "断开VPN" else "连接VPN"
-        })
 
         saveConfigButton.setOnClickListener {
             val tradeNo = tradeNoEditText.text.toString().trim()
@@ -107,6 +112,14 @@ class MainActivity : AppCompatActivity() {
                 Toast.makeText(this, "应用崩溃: ${e.message}", Toast.LENGTH_LONG).show()
             }
         }
+
+        val filter = IntentFilter().apply {
+            addAction(ProxyVpnService.ACTION_IP_UPDATED)
+            addAction(ProxyVpnService.ACTION_ERROR)
+            addAction(ProxyVpnService.ACTION_VPN_STARTED)
+            addAction(ProxyVpnService.ACTION_VPN_STOPPED)
+        }
+        LocalBroadcastManager.getInstance(this).registerReceiver(broadcastReceiver, filter)
     }
 
     private fun startVpn() {
@@ -121,7 +134,7 @@ class MainActivity : AppCompatActivity() {
                 startVpnService()
             }
         } catch (e: Exception) {
-            errorLiveData.postValue("VPN 准备失败 - ${e.message}")
+            reportError("VPN 准备失败 - ${e.message}")
         }
     }
 
@@ -129,16 +142,16 @@ class MainActivity : AppCompatActivity() {
         try {
             val intent = Intent(this, ProxyVpnService::class.java)
             startService(intent)
-            vpnStateLiveData.postValue(true)
+            updateVpnState(true)
             Toast.makeText(this, "VPN 服务启动中...", Toast.LENGTH_SHORT).show()
         } catch (e: Exception) {
-            errorLiveData.postValue("无法启动 VPN 服务 - ${e.message}")
+            reportError("无法启动 VPN 服务 - ${e.message}")
         }
     }
 
     private fun stopVpn() {
         stopService(Intent(this, ProxyVpnService::class.java))
-        vpnStateLiveData.postValue(false)
+        updateVpnState(false)
         ipText.text = "当前IP: 无"
         errorText.text = "状态: VPN 已手动断开"
     }
@@ -150,23 +163,37 @@ class MainActivity : AppCompatActivity() {
                 errorText.text = "状态: 用户已授权，正在启动 VPN 服务..."
                 startVpnService()
             } else {
-                errorLiveData.postValue("用户未授权 VPN 权限")
-                vpnStateLiveData.postValue(false)
+                reportError("用户未授权 VPN 权限")
+                updateVpnState(false)
             }
         }
     }
 
-    // 供Service调用的公开方法
     fun updateIpInfo(proxy: ProxyInfo) {
-        ipUpdateLiveData.postValue(proxy)
+        runOnUiThread {
+            ipText.text = "当前IP: ${proxy.ip}:${proxy.port}"
+            errorText.text = "状态: 运行正常"
+        }
     }
 
     fun reportError(error: String) {
-        errorLiveData.postValue(error)
+        runOnUiThread {
+            errorText.text = "错误: $error"
+            ipText.text = "当前IP: 获取失败"
+        }
     }
 
     fun updateVpnState(running: Boolean) {
-        vpnStateLiveData.postValue(running)
+        runOnUiThread {
+            isRunning = running
+            statusText.text = if (running) "VPN运行中" else "VPN未连接"
+            controlButton.text = if (running) "断开VPN" else "连接VPN"
+        }
+    }
+
+    override fun onDestroy() {
+        LocalBroadcastManager.getInstance(this).unregisterReceiver(broadcastReceiver)
+        super.onDestroy()
     }
 
     companion object {
