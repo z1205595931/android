@@ -1,6 +1,7 @@
 package com.example.myproxy
 
 import android.content.Context
+import android.util.Log
 import com.google.gson.Gson
 import com.google.gson.annotations.SerializedName
 import okhttp3.OkHttpClient
@@ -64,6 +65,8 @@ class ProxyApi(private val context: Context) {
         val url = "http://v2.api.juliangip.com/dynamic/getips?" +
                 "trade_no=$tradeNo&num=1&pt=2&result_type=json&filter=1&auth_info=1&sign=$sign"
 
+        Log.d("ProxyApi", "请求URL: $url")
+
         val request = Request.Builder()
             .url(url)
             .build()
@@ -73,6 +76,7 @@ class ProxyApi(private val context: Context) {
                 throw IOException("HTTP 请求失败: ${response.code}")
             }
             val body = response.body?.string() ?: throw IOException("响应体为空")
+            Log.d("ProxyApi", "响应JSON: $body")
 
             val apiResponse = gson.fromJson(body, ApiResponse::class.java)
             if (apiResponse.code != 200) {
@@ -83,21 +87,17 @@ class ProxyApi(private val context: Context) {
             if (proxyList.isEmpty()) {
                 throw IOException("API 未返回代理数据，请检查白名单或套餐余量")
             }
-            return parseProxyString(proxyList[0])
+            
+            val proxyInfo = parseProxyString(proxyList[0])
+            Log.d("ProxyApi", "解析成功: ${proxyInfo.ip}:${proxyInfo.port}")
+            return proxyInfo
         }
     }
 
     private fun generateSign(params: Map<String, String>, key: String): String {
-        // 1. 按参数名字典序排序
         val sortedParams = params.toSortedMap()
-        
-        // 2. 拼接参数字符串
         val rawStr = sortedParams.map { "${it.key}=${it.value}" }.joinToString("&")
-        
-        // 3. 拼接key
         val signRaw = "$rawStr&key=$key"
-        
-        // 4. MD5加密（32位小写）
         val md = MessageDigest.getInstance("MD5")
         val digest = md.digest(signRaw.toByteArray())
         return digest.joinToString("") { "%02x".format(it) }
