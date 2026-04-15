@@ -1,7 +1,6 @@
 package com.example.myproxy
 
 import android.content.Context
-import android.net.Network
 import android.util.Log
 import com.google.gson.Gson
 import com.google.gson.annotations.SerializedName
@@ -42,92 +41,32 @@ data class ProxyItem(
     @SerializedName("http_pass")
     val httpPass: String?
 )
-  // ... 其他代码保持不变 ...
 
-    private fun startVpn() {
-        try {
-            val builder = Builder()
-                .setSession("IP切换器")
-                .addAddress("10.0.0.2", 32)
-                .addRoute("0.0.0.0", 0)
-                .addDnsServer("114.114.114.114")
-                .addDnsServer("223.5.5.5")
-                .setMtu(1500)
-
-            vpnInterface?.close()
-            vpnInterface = builder.establish()
-
-            // ---------- 关键：将VPN接口传递给ProxyApi，用于保护Socket ----------
-            proxyApi.setVpnInterface(vpnInterface)
-            // -----------------------------------------------------------------
-
-            // 绑定进程到VPN网络（让其他应用流量走VPN）
-            bindProcessToVpnNetwork()
-
-            val tunInput = FileInputStream(vpnInterface!!.fileDescriptor)
-            val tunOutput = FileOutputStream(vpnInterface!!.fileDescriptor)
-
-            tun2Socks = Tun2Socks(tunInput, tunOutput, proxyApi, this)
-            tun2Socks?.start()
-
-            sendVpnStateBroadcast(true)
-            fetchAndUpdateProxyInBackground()
-            startScheduledSwitch()
-
-        } catch (e: Exception) {
-            // ... 错误处理 ...
-        }
-    }
-
-    /**
-     * 保护一个Socket，使其流量绕过VPN直接走物理网络
-     */
-    fun protectSocket(socket: java.net.Socket): Boolean {
-        return try {
-            protect(socket)
-        } catch (e: Exception) {
-            Log.e("ProxyVpnService", "protectSocket失败", e)
-            false
-        }
-    }
-
-class ProxyApi(private val context: Context, private var network: Network? = null) {
-
-    fun updateVpnNetwork(newNetwork: Network?) {
-        this.network = newNetwork
-    }
+class ProxyApi(private val context: Context) {
 
     private val gson = Gson()
 
-    private val client: OkHttpClient
-        get() {
-            val builder = OkHttpClient.Builder()
-                .connectTimeout(15, TimeUnit.SECONDS)
-                .readTimeout(15, TimeUnit.SECONDS)
-            network?.let {
-                builder.socketFactory(it.socketFactory)
-            }
-            return builder.build()
-        }
+    private val client = OkHttpClient.Builder()
+        .connectTimeout(15, TimeUnit.SECONDS)
+        .readTimeout(15, TimeUnit.SECONDS)
+        .build()
 
     @Throws(IOException::class)
     fun fetchSingleProxy(): ProxyInfo {
-        // 获取用户保存的API链接
         val originalUrl = PreferencesManager.getApiUrl(context)
         if (originalUrl.isBlank()) {
-            throw IOException("请先配置API提取链接")
+            throw IOException("请先在主界面配置API提取链接")
         }
 
-        // ⚠️ 将域名替换为您ping到的真实IP地址（示例为123.58.243.40，请务必换成您自己ping出的IP）
-        val API_IP = "123.6.195.38"  // <--- 这里替换成您ping到的IP
+        // ⚠️ 请替换为您 ping v2.api.juliangip.com 得到的真实 IP
+        val API_IP = "123.6.195.38"
         val apiUrl = originalUrl.replace("v2.api.juliangip.com", API_IP)
 
-        Log.d("ProxyApi", "原始URL: $originalUrl")
         Log.d("ProxyApi", "直连URL: $apiUrl")
 
         val request = Request.Builder()
             .url(apiUrl)
-            .addHeader("Host", "v2.api.juliangip.com")  // 必须添加Host头，否则服务器不知道访问哪个站点
+            .addHeader("Host", "v2.api.juliangip.com")
             .build()
 
         client.newCall(request).execute().use { response ->
