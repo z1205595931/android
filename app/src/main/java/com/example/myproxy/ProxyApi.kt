@@ -10,9 +10,35 @@ import okhttp3.Request
 import java.io.IOException
 import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
-import javax.net.SocketFactory
 
-// ... (数据类保持不变)
+// 数据类定义：代理信息
+data class ProxyInfo(
+    val ip: String,
+    val port: Int,
+    @SerializedName("http_user")
+    val username: String? = null,
+    @SerializedName("http_pass")
+    val password: String? = null,
+    val protocol: String = "socks5"
+)
+
+// 数据类定义：API 最外层响应
+data class ApiResponse(
+    val code: Int,
+    val msg: String,
+    val data: ProxyData
+)
+
+// 数据类定义：API 响应中的 data 字段
+data class ProxyData(
+    val count: Int,
+    @SerializedName("filter_count")
+    val filterCount: Int,
+    @SerializedName("surplus_quantity")
+    val surplusQuantity: Int,
+    @SerializedName("proxy_list")
+    val proxyList: List<String>
+)
 
 class ProxyApi(private val context: Context, private var network: Network? = null) {
 
@@ -20,19 +46,21 @@ class ProxyApi(private val context: Context, private var network: Network? = nul
         this.network = newNetwork
     }
 
+    private val gson = Gson()
+
     private val client: OkHttpClient
         get() {
             val builder = OkHttpClient.Builder()
                 .connectTimeout(10, TimeUnit.SECONDS)
                 .readTimeout(10, TimeUnit.SECONDS)
-            
-            // 如果有 VPN 网络，则使用其 SocketFactory
+
+            // 如果提供了 VPN 网络，则使用其 SocketFactory
             network?.let {
                 val socketFactory = it.socketFactory
                 builder.socketFactory(socketFactory)
                 Log.d("ProxyApi", "使用 VPN 网络的 SocketFactory")
             }
-            
+
             return builder.build()
         }
 
@@ -92,5 +120,23 @@ class ProxyApi(private val context: Context, private var network: Network? = nul
         }
     }
 
-    // ... 其余方法保持不变 (generateSign, parseProxyString)
+    // 生成 MD5 签名
+    private fun generateSign(params: Map<String, String>, key: String): String {
+        val sortedParams = params.toSortedMap()
+        val rawStr = sortedParams.map { "${it.key}=${it.value}" }.joinToString("&")
+        val signRaw = "$rawStr&key=$key"
+        val md = MessageDigest.getInstance("MD5")
+        val digest = md.digest(signRaw.toByteArray())
+        return digest.joinToString("") { "%02x".format(it) }
+    }
+
+    // 解析代理字符串，格式为 ip:port 或 ip:port:username:password
+    private fun parseProxyString(proxyStr: String): ProxyInfo {
+        val parts = proxyStr.split(":")
+        return when (parts.size) {
+            2 -> ProxyInfo(parts[0], parts[1].toInt(), null, null)
+            4 -> ProxyInfo(parts[0], parts[1].toInt(), parts[2], parts[3])
+            else -> throw IllegalArgumentException("Invalid proxy format: $proxyStr")
+        }
+    }
 }
