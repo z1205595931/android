@@ -8,7 +8,7 @@ import java.net.InetAddress
 
 class OkHttpDns : Dns {
     // 替换为你的 AccountID
-    private val httpdnsService = HttpDns.getService("118094")
+    private val httpdnsService = HttpDns.getService(MyApp.ACCOUNT_ID)
 
     override fun lookup(hostname: String): List<InetAddress> {
         return try {
