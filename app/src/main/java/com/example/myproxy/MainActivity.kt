@@ -7,6 +7,8 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.net.VpnService
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.widget.Button
 import android.widget.EditText
 import android.widget.TextView
@@ -14,16 +16,13 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import android.app.AlertDialog
-import android.os.Handler
-import android.os.Looper
 
 class MainActivity : AppCompatActivity() {
 
     private lateinit var statusText: TextView
     private lateinit var ipText: TextView
     private lateinit var errorText: TextView
-    private lateinit var tradeNoEditText: EditText
-    private lateinit var apiKeyEditText: EditText
+    private lateinit var apiUrlEditText: EditText
     private lateinit var saveConfigButton: Button
     private lateinit var whitelistHelpButton: Button
     private lateinit var controlButton: Button
@@ -60,29 +59,26 @@ class MainActivity : AppCompatActivity() {
         statusText = findViewById(R.id.status_text)
         ipText = findViewById(R.id.ip_text)
         errorText = findViewById(R.id.error_text)
-        tradeNoEditText = findViewById(R.id.trade_no_edittext)
-        apiKeyEditText = findViewById(R.id.api_key_edittext)
+        apiUrlEditText = findViewById(R.id.api_url_edittext)
         saveConfigButton = findViewById(R.id.save_config_button)
         whitelistHelpButton = findViewById(R.id.whitelist_help_button)
         controlButton = findViewById(R.id.control_button)
 
-        val savedTradeNo = PreferencesManager.getTradeNo(this)
-        val savedApiKey = PreferencesManager.getApiKey(this)
-        tradeNoEditText.setText(savedTradeNo)
-        apiKeyEditText.setText(savedApiKey)
+        // 加载已保存的 API URL
+        val savedApiUrl = PreferencesManager.getApiUrl(this)
+        apiUrlEditText.setText(savedApiUrl)
 
         saveConfigButton.setOnClickListener {
-            val tradeNo = tradeNoEditText.text.toString().trim()
-            val apiKey = apiKeyEditText.text.toString().trim()
-            if (tradeNo.isEmpty() || apiKey.isEmpty()) {
-                Toast.makeText(this, "业务编号和API Key不能为空", Toast.LENGTH_SHORT).show()
+            val apiUrl = apiUrlEditText.text.toString().trim()
+            if (apiUrl.isEmpty()) {
+                Toast.makeText(this, "请输入完整的 API 提取链接", Toast.LENGTH_SHORT).show()
                 return@setOnClickListener
             }
-            PreferencesManager.saveTradeNo(this, tradeNo)
-            PreferencesManager.saveApiKey(this, apiKey)
-            Toast.makeText(this, "配置已保存", Toast.LENGTH_SHORT).show()
-            errorText.text = "状态: 配置已更新"
-            
+            PreferencesManager.saveApiUrl(this, apiUrl)
+            Toast.makeText(this, "API 链接已保存", Toast.LENGTH_SHORT).show()
+            errorText.text = "状态: API 链接已更新"
+
+            // 如果 VPN 未运行，自动启动
             if (!isRunning) {
                 startVpn()
             }
@@ -91,7 +87,7 @@ class MainActivity : AppCompatActivity() {
         whitelistHelpButton.setOnClickListener {
             AlertDialog.Builder(this)
                 .setTitle("设置白名单")
-                .setMessage("请按以下步骤操作：\n1. 在云手机浏览器中访问 ip.sb 获取公网IP\n2. 登录巨量IP官网 -> 产品管理 -> 对应订单 -> 设置白名单\n3. 粘贴刚获取的IP地址并保存\n4. 等待1-3分钟后重试")
+                .setMessage("1. 在云手机浏览器访问 ip.sb 获取公网IP\n2. 登录巨量IP官网 -> 产品管理 -> 对应订单 -> 设置白名单\n3. 粘贴IP并保存，等待1-3分钟生效")
                 .setPositiveButton("我知道了", null)
                 .show()
         }
