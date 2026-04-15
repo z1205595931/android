@@ -60,7 +60,7 @@ class ProxyApi(private val context: Context) {
             "auth_info" to "1"
         )
         val sign = generateSign(params, apiKey)
-        
+
         val url = "http://v2.api.juliangip.com/dynamic/getips?" +
                 "trade_no=$tradeNo&num=1&pt=2&result_type=json&filter=1&auth_info=1&sign=$sign"
 
@@ -72,9 +72,9 @@ class ProxyApi(private val context: Context) {
 
         client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) {
-                throw IOException("HTTP 请求失败: ${response.code}")
+                throw IOException("HTTP 请求失败: ${response.code()}")
             }
-            val body = response.body?.string() ?: throw IOException("响应体为空")
+            val body = response.body()?.string() ?: throw IOException("响应体为空")
             Log.d("ProxyApi", "响应JSON: $body")
 
             val apiResponse = gson.fromJson(body, ApiResponse::class.java)
@@ -86,7 +86,7 @@ class ProxyApi(private val context: Context) {
             if (proxyList.isEmpty()) {
                 throw IOException("API 未返回代理数据，请检查白名单或套餐余量")
             }
-            
+
             val proxyInfo = parseProxyString(proxyList[0])
             Log.d("ProxyApi", "解析成功: ${proxyInfo.ip}:${proxyInfo.port}")
             return proxyInfo
