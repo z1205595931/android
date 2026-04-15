@@ -37,7 +37,7 @@ dependencies {
     implementation("com.squareup.okhttp3:okhttp:3.12.13")
     implementation("com.google.code.gson:gson:2.10.1")
     implementation("androidx.localbroadcastmanager:localbroadcastmanager:1.1.0")
-    implementation("com.aliyun.ams:alicloud-android-httpdns:2.3.5")
+    implementation("com.aliyun.ams:alicloud-android-httpdns:2.6.7")
     implementation("com.google.code.gson:gson:2.10.1")
 
 }
