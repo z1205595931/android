@@ -21,8 +21,8 @@ class MyApp : Application() {
             .setSecretKey(SECRET_KEY)
             .build()
         HttpDns.init(this, config)
-        
-        // 获取服务实例（可选，用于预加载）
+
+        // 预加载域名（可选）
         val httpdnsService = HttpDns.getService(this, ACCOUNT_ID)
         httpdnsService.setPreResolveHosts(listOf("v2.api.juliangip.com"))
     }
