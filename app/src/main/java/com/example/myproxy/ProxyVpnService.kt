@@ -16,6 +16,7 @@ import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.lang.reflect.Method
+import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
@@ -26,6 +27,9 @@ class ProxyVpnService : VpnService() {
     private var tun2Socks: Tun2Socks? = null
     private lateinit var proxyApi: ProxyApi
 
+    // 用于执行网络请求的单线程池（避免主线程网络异常）
+    private val networkExecutor: ExecutorService = Executors.newSingleThreadExecutor()
+    // 用于定时切换的调度器
     private val scheduler = Executors.newScheduledThreadPool(1)
     private var switchTask: ScheduledFuture<*>? = null
 
@@ -53,9 +57,8 @@ class ProxyVpnService : VpnService() {
             vpnInterface?.close()
             vpnInterface = builder.establish()
 
-            // ---------- 关键修复：绑定进程到 VPN 网络（使用反射兼容低版本编译）----------
+            // 绑定进程到VPN网络（可选，通过反射处理）
             bindProcessToVpnNetwork()
-            // ---------------------------------------------------------------------
 
             val tunInput = FileInputStream(vpnInterface!!.fileDescriptor)
             val tunOutput = FileOutputStream(vpnInterface!!.fileDescriptor)
@@ -65,8 +68,8 @@ class ProxyVpnService : VpnService() {
 
             sendVpnStateBroadcast(true)
 
-            // 立即获取一次代理
-            fetchAndUpdateProxy()
+            // 立即在后台线程获取一次代理（避免主线程网络异常）
+            fetchAndUpdateProxyInBackground()
 
             startScheduledSwitch()
 
@@ -79,8 +82,37 @@ class ProxyVpnService : VpnService() {
     }
 
     /**
-     * 将当前应用进程强制绑定到 VPN 虚拟网络接口。
-     * 使用反射调用 android.net.Network.fromFileDescriptor，兼容 API < 29。
+     * 在后台线程执行代理获取与更新
+     */
+    private fun fetchAndUpdateProxyInBackground() {
+        networkExecutor.submit {
+            try {
+                val newProxy = proxyApi.fetchSingleProxy()
+                tun2Socks?.updateProxy(newProxy)
+                sendIpUpdateBroadcast(newProxy)
+                Log.d("ProxyVpnService", "获取代理成功: ${newProxy.ip}:${newProxy.port}")
+            } catch (e: Throwable) {
+                e.printStackTrace()
+                Log.e("ProxyVpnService", "获取代理失败", e)
+                val errorMsg = e.message ?: e.toString()
+                val stackTrace = e.stackTraceToString()
+                sendErrorBroadcast("获取代理失败: $errorMsg\n$stackTrace")
+            }
+        }
+    }
+
+    /**
+     * 启动定时切换任务（已在子线程执行）
+     */
+    private fun startScheduledSwitch() {
+        switchTask?.cancel(false)
+        switchTask = scheduler.scheduleAtFixedRate({
+            fetchAndUpdateProxyInBackground()
+        }, 3, 3, TimeUnit.MINUTES)
+    }
+
+    /**
+     * 绑定进程到VPN网络（反射调用，兼容低版本编译）
      */
     private fun bindProcessToVpnNetwork() {
         try {
@@ -88,7 +120,6 @@ class ProxyVpnService : VpnService() {
             val fd = vpnInterface?.fileDescriptor ?: return
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                // 尝试通过反射调用 Network.fromFileDescriptor
                 val networkClass = Class.forName("android.net.Network")
                 val fromFileDescriptorMethod: Method = networkClass.getMethod("fromFileDescriptor", java.io.FileDescriptor::class.java)
                 val network = fromFileDescriptorMethod.invoke(null, fd) as? Any
@@ -105,28 +136,6 @@ class ProxyVpnService : VpnService() {
         } catch (e: Exception) {
             Log.e("ProxyVpnService", "绑定进程到VPN网络失败", e)
         }
-    }
-
-    private fun fetchAndUpdateProxy() {
-        try {
-            val newProxy = proxyApi.fetchSingleProxy()
-            tun2Socks?.updateProxy(newProxy)
-            sendIpUpdateBroadcast(newProxy)
-            Log.d("ProxyVpnService", "获取代理成功: ${newProxy.ip}:${newProxy.port}")
-        } catch (e: Throwable) {
-            e.printStackTrace()
-            Log.e("ProxyVpnService", "获取代理失败", e)
-            val errorMsg = e.message ?: e.toString()
-            val stackTrace = e.stackTraceToString()
-            sendErrorBroadcast("获取代理失败: $errorMsg\n$stackTrace")
-        }
-    }
-
-    private fun startScheduledSwitch() {
-        switchTask?.cancel(false)
-        switchTask = scheduler.scheduleAtFixedRate({
-            fetchAndUpdateProxy()
-        }, 3, 3, TimeUnit.MINUTES)
     }
 
     private fun sendIpUpdateBroadcast(proxy: ProxyInfo) {
@@ -179,6 +188,7 @@ class ProxyVpnService : VpnService() {
     override fun onDestroy() {
         switchTask?.cancel(true)
         scheduler.shutdown()
+        networkExecutor.shutdown()
         tun2Socks?.stopProcessing()
         tun2Socks?.interrupt()
         vpnInterface?.close()
