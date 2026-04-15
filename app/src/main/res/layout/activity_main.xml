@@ -34,9 +34,9 @@
         android:id="@+id/api_url_edittext"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:hint="输入巨量IP完整API提取链接"
+        android:hint="API提取链接"
         android:inputType="textUri"
-        android:lines="3"
+        android:lines="2"
         android:layout_marginBottom="8dp"/>
 
     <Button
