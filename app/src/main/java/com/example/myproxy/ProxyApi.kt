@@ -37,9 +37,14 @@ data class ProxyData(
 )
 
 class ProxyApi(private val context: Context) {
+    
+    // ⚠️ 请替换为 ping v2.api.juliangip.com 得到的实际 IP 地址
+    private val API_IP_ADDRESS = "121.14.44.83"  // 示例IP，必须替换！
+    
     private val client = OkHttpClient.Builder()
         .connectTimeout(10, TimeUnit.SECONDS)
         .readTimeout(10, TimeUnit.SECONDS)
+        .hostnameVerifier { _, _ -> true }  // 允许 IP 直连时忽略证书验证
         .build()
     private val gson = Gson()
 
@@ -61,35 +66,43 @@ class ProxyApi(private val context: Context) {
         )
         val sign = generateSign(params, apiKey)
 
-        val url = "http://v2.api.juliangip.com/dynamic/getips?" +
+        // 使用 IP 直连，并在请求头中设置 Host 字段
+        val url = "http://$API_IP_ADDRESS/dynamic/getips?" +
                 "trade_no=$tradeNo&num=1&pt=2&result_type=json&filter=1&auth_info=1&sign=$sign"
 
         Log.d("ProxyApi", "请求URL: $url")
 
         val request = Request.Builder()
             .url(url)
+            .addHeader("Host", "v2.api.juliangip.com")  // 关键：告诉服务器我们访问的是哪个域名
             .build()
 
-        client.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) {
-                throw IOException("HTTP 请求失败: ${response.code()}")
-            }
-            val body = response.body()?.string() ?: throw IOException("响应体为空")
-            Log.d("ProxyApi", "响应JSON: $body")
+        try {
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    throw IOException("HTTP 请求失败: ${response.code()}")
+                }
+                val body = response.body()?.string() ?: throw IOException("响应体为空")
+                Log.d("ProxyApi", "响应JSON: $body")
 
-            val apiResponse = gson.fromJson(body, ApiResponse::class.java)
-            if (apiResponse.code != 200) {
-                throw IOException("API 业务错误: ${apiResponse.msg}")
-            }
+                val apiResponse = gson.fromJson(body, ApiResponse::class.java)
+                if (apiResponse.code != 200) {
+                    throw IOException("API 业务错误: ${apiResponse.msg}")
+                }
 
-            val proxyList = apiResponse.data.proxyList
-            if (proxyList.isEmpty()) {
-                throw IOException("API 未返回代理数据，请检查白名单或套餐余量")
-            }
+                val proxyList = apiResponse.data.proxyList
+                if (proxyList.isEmpty()) {
+                    throw IOException("API 未返回代理数据，请检查白名单或套餐余量")
+                }
 
-            val proxyInfo = parseProxyString(proxyList[0])
-            Log.d("ProxyApi", "解析成功: ${proxyInfo.ip}:${proxyInfo.port}")
-            return proxyInfo
+                val proxyInfo = parseProxyString(proxyList[0])
+                Log.d("ProxyApi", "解析成功: ${proxyInfo.ip}:${proxyInfo.port}")
+                return proxyInfo
+            }
+        } catch (e: IOException) {
+            throw e
+        } catch (e: Exception) {
+            throw IOException("网络请求异常: ${e.javaClass.simpleName} - ${e.message}", e)
         }
     }
 
