@@ -4,7 +4,9 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
+import android.content.Context
 import android.content.Intent
+import android.net.ConnectivityManager
 import android.net.VpnService
 import android.os.Build
 import android.os.ParcelFileDescriptor
@@ -50,6 +52,10 @@ class ProxyVpnService : VpnService() {
             vpnInterface?.close()
             vpnInterface = builder.establish()
 
+            // ---------- 关键修复：绑定进程到 VPN 网络 ----------
+            bindProcessToVpnNetwork()
+            // ------------------------------------------------
+
             val tunInput = FileInputStream(vpnInterface!!.fileDescriptor)
             val tunOutput = FileOutputStream(vpnInterface!!.fileDescriptor)
 
@@ -71,16 +77,43 @@ class ProxyVpnService : VpnService() {
         }
     }
 
+    /**
+     * 将当前应用进程强制绑定到 VPN 虚拟网络接口，
+     * 确保所有网络请求（包括 API 请求）都通过 VPN 通道发出。
+     */
+    private fun bindProcessToVpnNetwork() {
+        try {
+            val connectivityManager = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+            val fd = vpnInterface?.fileDescriptor
+
+            if (fd != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                val network = android.net.Network.fromFileDescriptor(fd)
+                if (network != null) {
+                    val bindResult = connectivityManager.bindProcessToNetwork(network)
+                    Log.d("ProxyVpnService", "进程绑定到VPN网络结果: $bindResult")
+                } else {
+                    Log.w("ProxyVpnService", "无法从文件描述符获取Network对象")
+                }
+            } else {
+                Log.w("ProxyVpnService", "无法绑定进程到VPN网络: fd=$fd, SDK=${Build.VERSION.SDK_INT}")
+            }
+        } catch (e: Exception) {
+            Log.e("ProxyVpnService", "绑定进程到VPN网络失败", e)
+        }
+    }
+
     private fun fetchAndUpdateProxy() {
         try {
             val newProxy = proxyApi.fetchSingleProxy()
             tun2Socks?.updateProxy(newProxy)
             sendIpUpdateBroadcast(newProxy)
             Log.d("ProxyVpnService", "获取代理成功: ${newProxy.ip}:${newProxy.port}")
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             e.printStackTrace()
             Log.e("ProxyVpnService", "获取代理失败", e)
-            sendErrorBroadcast("获取代理失败: ${e.message}")
+            val errorMsg = e.message ?: e.toString()
+            val stackTrace = e.stackTraceToString()
+            sendErrorBroadcast("获取代理失败: $errorMsg\n$stackTrace")
         }
     }
 
