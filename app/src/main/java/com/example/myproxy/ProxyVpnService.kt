@@ -10,6 +10,7 @@ import android.os.Build
 import android.os.ParcelFileDescriptor
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.util.concurrent.Executors
@@ -42,7 +43,7 @@ class ProxyVpnService : VpnService() {
                 .setSession("IP切换器")
                 .addAddress("10.0.0.2", 32)
                 .addRoute("0.0.0.0", 0)
-                .addDnsServer("114.114.114.114")  // 改用国内DNS
+                .addDnsServer("114.114.114.114")
                 .addDnsServer("223.5.5.5")
                 .setMtu(1500)
 
@@ -55,19 +56,17 @@ class ProxyVpnService : VpnService() {
             tun2Socks = Tun2Socks(tunInput, tunOutput, proxyApi, this)
             tun2Socks?.start()
 
-            // 通知界面 VPN 已启动
-            (applicationContext as? MainActivity)?.updateVpnState(true)
+            sendVpnStateBroadcast(true)
 
-            // ---------- 立即获取一次代理 IP ----------
+            // 立即获取一次代理
             fetchAndUpdateProxy()
 
-            // 启动定时切换
             startScheduledSwitch()
 
         } catch (e: Exception) {
             e.printStackTrace()
             Log.e("ProxyVpnService", "VPN启动失败", e)
-            (applicationContext as? MainActivity)?.reportError("VPN 启动失败: ${e.message}")
+            sendErrorBroadcast("VPN 启动失败: ${e.message}")
             stopSelf()
         }
     }
@@ -76,12 +75,12 @@ class ProxyVpnService : VpnService() {
         try {
             val newProxy = proxyApi.fetchSingleProxy()
             tun2Socks?.updateProxy(newProxy)
-            (applicationContext as? MainActivity)?.updateIpInfo(newProxy)
-            Log.d("ProxyVpnService", "首次获取代理成功: ${newProxy.ip}:${newProxy.port}")
+            sendIpUpdateBroadcast(newProxy)
+            Log.d("ProxyVpnService", "获取代理成功: ${newProxy.ip}:${newProxy.port}")
         } catch (e: Exception) {
             e.printStackTrace()
-            Log.e("ProxyVpnService", "首次获取代理失败", e)
-            (applicationContext as? MainActivity)?.reportError("首次获取代理失败: ${e.message}")
+            Log.e("ProxyVpnService", "获取代理失败", e)
+            sendErrorBroadcast("获取代理失败: ${e.message}")
         }
     }
 
@@ -90,6 +89,27 @@ class ProxyVpnService : VpnService() {
         switchTask = scheduler.scheduleAtFixedRate({
             fetchAndUpdateProxy()
         }, 3, 3, TimeUnit.MINUTES)
+    }
+
+    private fun sendIpUpdateBroadcast(proxy: ProxyInfo) {
+        LocalBroadcastManager.getInstance(this).sendBroadcast(
+            Intent(ACTION_IP_UPDATED).apply {
+                putExtra("ip", proxy.ip)
+                putExtra("port", proxy.port)
+            }
+        )
+    }
+
+    private fun sendErrorBroadcast(error: String) {
+        LocalBroadcastManager.getInstance(this).sendBroadcast(
+            Intent(ACTION_ERROR).putExtra("error", error)
+        )
+    }
+
+    private fun sendVpnStateBroadcast(running: Boolean) {
+        LocalBroadcastManager.getInstance(this).sendBroadcast(
+            Intent(if (running) ACTION_VPN_STARTED else ACTION_VPN_STOPPED)
+        )
     }
 
     private fun createNotification(): Notification {
@@ -124,12 +144,16 @@ class ProxyVpnService : VpnService() {
         tun2Socks?.stopProcessing()
         tun2Socks?.interrupt()
         vpnInterface?.close()
-        (applicationContext as? MainActivity)?.updateVpnState(false)
+        sendVpnStateBroadcast(false)
         super.onDestroy()
     }
 
     companion object {
         private const val NOTIFICATION_ID = 1
         private const val CHANNEL_ID = "vpn_service_channel"
+        const val ACTION_IP_UPDATED = "com.example.myproxy.IP_UPDATED"
+        const val ACTION_ERROR = "com.example.myproxy.ERROR"
+        const val ACTION_VPN_STARTED = "com.example.myproxy.VPN_STARTED"
+        const val ACTION_VPN_STOPPED = "com.example.myproxy.VPN_STOPPED"
     }
 }
