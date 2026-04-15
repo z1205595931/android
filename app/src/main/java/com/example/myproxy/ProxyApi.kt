@@ -48,17 +48,13 @@ class ProxyApi(private val context: Context, private var network: Network? = nul
 
     private val gson = Gson()
 
-    private val client: OkHttpClient
+   private val client: OkHttpClient
     get() {
         val builder = OkHttpClient.Builder()
             .connectTimeout(10, TimeUnit.SECONDS)
             .readTimeout(10, TimeUnit.SECONDS)
-            .dns(OkHttpDns())  // 应用阿里云 HTTPDNS
-
-        network?.let {
-            val socketFactory = it.socketFactory
-            builder.socketFactory(socketFactory)
-        }
+            .dns(OkHttpDns()) // 应用新版阿里云HTTPDNS
+        // ... 其他配置
         return builder.build()
     }
     @Throws(IOException::class)
