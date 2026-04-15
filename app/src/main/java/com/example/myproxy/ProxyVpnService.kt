@@ -64,7 +64,7 @@ class ProxyVpnService : VpnService() {
 
     override fun onCreate() {
         super.onCreate()
-        proxyApi = ProxyApi(this, vpnNetwork) // 将 network 传递给 ProxyApi
+        proxyApi = ProxyApi(this)  // this 就是 ProxyVpnService 实例
         startForeground(NOTIFICATION_ID, createNotification())
     }
 
