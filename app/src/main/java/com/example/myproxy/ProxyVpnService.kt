@@ -20,13 +20,14 @@ class ProxyVpnService : VpnService() {
 
     private var vpnInterface: ParcelFileDescriptor? = null
     private var tun2Socks: Tun2Socks? = null
-    private val proxyApi = ProxyApi()
+    private lateinit var proxyApi: ProxyApi
 
     private val scheduler = Executors.newScheduledThreadPool(1)
     private var switchTask: ScheduledFuture<*>? = null
 
     override fun onCreate() {
         super.onCreate()
+        proxyApi = ProxyApi(this)
         startForeground(NOTIFICATION_ID, createNotification())
     }
 
@@ -51,13 +52,17 @@ class ProxyVpnService : VpnService() {
             val tunInput = FileInputStream(vpnInterface!!.fileDescriptor)
             val tunOutput = FileOutputStream(vpnInterface!!.fileDescriptor)
 
-            tun2Socks = Tun2Socks(tunInput, tunOutput, proxyApi)
+            tun2Socks = Tun2Socks(tunInput, tunOutput, proxyApi, this)
             tun2Socks?.start()
+
+            // 广播 VPN 已启动
+            LocalBroadcastManager.getInstance(this).sendBroadcast(Intent(ACTION_VPN_STARTED))
 
             startScheduledSwitch()
 
         } catch (e: Exception) {
             e.printStackTrace()
+            sendError("VPN 启动失败: ${e.message}")
             stopSelf()
         }
     }
@@ -76,8 +81,15 @@ class ProxyVpnService : VpnService() {
                 )
             } catch (e: Exception) {
                 e.printStackTrace()
+                sendError("获取代理失败: ${e.message}")
             }
         }, 3, 3, TimeUnit.MINUTES)
+    }
+
+    private fun sendError(message: String) {
+        LocalBroadcastManager.getInstance(this).sendBroadcast(
+            Intent(ACTION_ERROR).putExtra("error", message)
+        )
     }
 
     private fun createNotification(): Notification {
@@ -112,6 +124,7 @@ class ProxyVpnService : VpnService() {
         tun2Socks?.stopProcessing()
         tun2Socks?.interrupt()
         vpnInterface?.close()
+        LocalBroadcastManager.getInstance(this).sendBroadcast(Intent(ACTION_VPN_STOPPED))
         super.onDestroy()
     }
 
@@ -119,5 +132,8 @@ class ProxyVpnService : VpnService() {
         private const val NOTIFICATION_ID = 1
         private const val CHANNEL_ID = "vpn_service_channel"
         const val ACTION_IP_UPDATED = "com.example.myproxy.IP_UPDATED"
+        const val ACTION_ERROR = "com.example.myproxy.ERROR"
+        const val ACTION_VPN_STARTED = "com.example.myproxy.VPN_STARTED"
+        const val ACTION_VPN_STOPPED = "com.example.myproxy.VPN_STOPPED"
     }
 }
