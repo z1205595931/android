@@ -1,7 +1,9 @@
 package com.example.myproxy
 
 import android.content.Context
+import android.content.Intent
 import android.util.Log
+import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.util.concurrent.atomic.AtomicReference
@@ -41,7 +43,6 @@ class Tun2Socks(
         return proxy
     }
 
-    // ... 其余 run()、processPacket() 代码保持不变（与之前相同）
     override fun run() {
         val packet = ByteArray(32767)
         while (running) {
