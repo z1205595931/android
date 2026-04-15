@@ -15,6 +15,7 @@ import androidx.core.app.NotificationCompat
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import java.io.FileInputStream
 import java.io.FileOutputStream
+import java.lang.reflect.Method
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
@@ -52,9 +53,9 @@ class ProxyVpnService : VpnService() {
             vpnInterface?.close()
             vpnInterface = builder.establish()
 
-            // ---------- 关键修复：绑定进程到 VPN 网络 ----------
+            // ---------- 关键修复：绑定进程到 VPN 网络（使用反射兼容低版本编译）----------
             bindProcessToVpnNetwork()
-            // ------------------------------------------------
+            // ---------------------------------------------------------------------
 
             val tunInput = FileInputStream(vpnInterface!!.fileDescriptor)
             val tunOutput = FileOutputStream(vpnInterface!!.fileDescriptor)
@@ -78,24 +79,28 @@ class ProxyVpnService : VpnService() {
     }
 
     /**
-     * 将当前应用进程强制绑定到 VPN 虚拟网络接口，
-     * 确保所有网络请求（包括 API 请求）都通过 VPN 通道发出。
+     * 将当前应用进程强制绑定到 VPN 虚拟网络接口。
+     * 使用反射调用 android.net.Network.fromFileDescriptor，兼容 API < 29。
      */
     private fun bindProcessToVpnNetwork() {
         try {
             val connectivityManager = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-            val fd = vpnInterface?.fileDescriptor
+            val fd = vpnInterface?.fileDescriptor ?: return
 
-            if (fd != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                val network = android.net.Network.fromFileDescriptor(fd)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                // 尝试通过反射调用 Network.fromFileDescriptor
+                val networkClass = Class.forName("android.net.Network")
+                val fromFileDescriptorMethod: Method = networkClass.getMethod("fromFileDescriptor", java.io.FileDescriptor::class.java)
+                val network = fromFileDescriptorMethod.invoke(null, fd) as? Any
+
                 if (network != null) {
-                    val bindResult = connectivityManager.bindProcessToNetwork(network)
-                    Log.d("ProxyVpnService", "进程绑定到VPN网络结果: $bindResult")
+                    val bindResult = connectivityManager.bindProcessToNetwork(network as android.net.Network)
+                    Log.d("ProxyVpnService", "进程绑定到VPN网络结果 (反射): $bindResult")
                 } else {
-                    Log.w("ProxyVpnService", "无法从文件描述符获取Network对象")
+                    Log.w("ProxyVpnService", "反射获取Network对象失败")
                 }
             } else {
-                Log.w("ProxyVpnService", "无法绑定进程到VPN网络: fd=$fd, SDK=${Build.VERSION.SDK_INT}")
+                Log.w("ProxyVpnService", "Android版本低于M，无法绑定进程到网络")
             }
         } catch (e: Exception) {
             Log.e("ProxyVpnService", "绑定进程到VPN网络失败", e)
