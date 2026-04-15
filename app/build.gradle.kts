@@ -38,7 +38,7 @@ dependencies {
     implementation("com.google.code.gson:gson:2.10.1")
     implementation("androidx.localbroadcastmanager:localbroadcastmanager:1.1.0")
     // ... 你的其他依赖 ...
-    implementation("com.alibaba.pdns:alidns-android-sdk:2.6.7") // 使用最新稳定版本[reference:2][reference:3]
+    implementation("com.alibaba.pdns:alidns-android-sdk:2.3.0")
     implementation("com.google.code.gson:gson:2.10.1")
 
 }
