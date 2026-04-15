@@ -16,6 +16,7 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import android.app.AlertDialog
+import java.util.concurrent.Executors
 
 class MainActivity : AppCompatActivity() {
 
@@ -28,6 +29,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var controlButton: Button
     private var isRunning = false
 
+    private val executor = Executors.newSingleThreadExecutor()
     private val mainHandler = Handler(Looper.getMainLooper())
 
     private val broadcastReceiver = object : BroadcastReceiver() {
@@ -42,12 +44,8 @@ class MainActivity : AppCompatActivity() {
                     val error = intent.getStringExtra("error") ?: "未知错误"
                     reportError(error)
                 }
-                ProxyVpnService.ACTION_VPN_STARTED -> {
-                    updateVpnState(true)
-                }
-                ProxyVpnService.ACTION_VPN_STOPPED -> {
-                    updateVpnState(false)
-                }
+                ProxyVpnService.ACTION_VPN_STARTED -> updateVpnState(true)
+                ProxyVpnService.ACTION_VPN_STOPPED -> updateVpnState(false)
             }
         }
     }
@@ -75,13 +73,12 @@ class MainActivity : AppCompatActivity() {
             PreferencesManager.saveApiUrl(this, apiUrl)
             Toast.makeText(this, "API已保存", Toast.LENGTH_SHORT).show()
             errorText.text = "状态: 配置已更新"
-            if (!isRunning) startVpn()
         }
 
         whitelistHelpButton.setOnClickListener {
             AlertDialog.Builder(this)
                 .setTitle("设置白名单")
-                .setMessage("1. 在浏览器访问 ip.sb 获取本机IP\n2. 登录巨量IP后台 -> 产品管理 -> 对应订单 -> 白名单\n3. 添加IP后等待1-3分钟生效")
+                .setMessage("1. 浏览器访问 ip.sb 获取本机IP\n2. 登录巨量IP后台 -> 产品管理 -> 对应订单 -> 白名单\n3. 添加IP后等待1-3分钟生效")
                 .setPositiveButton("我知道了", null)
                 .show()
         }
@@ -107,12 +104,31 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun startVpn() {
-        errorText.text = "状态: 检查权限..."
-        val intent = VpnService.prepare(this)
-        if (intent != null) {
-            startActivityForResult(intent, VPN_REQUEST_CODE)
-        } else {
-            startVpnService()
+        errorText.text = "状态: 正在获取代理IP..."
+        controlButton.isEnabled = false
+
+        executor.execute {
+            try {
+                val proxyApi = ProxyApi(this)
+                val proxy = proxyApi.fetchSingleProxy()
+                ProxyVpnService.currentProxy = proxy
+
+                mainHandler.post {
+                    errorText.text = "状态: 代理获取成功，正在启动VPN..."
+                    val intent = VpnService.prepare(this)
+                    if (intent != null) {
+                        startActivityForResult(intent, VPN_REQUEST_CODE)
+                    } else {
+                        startVpnService()
+                    }
+                    controlButton.isEnabled = true
+                }
+            } catch (e: Exception) {
+                mainHandler.post {
+                    reportError("获取代理失败: ${e.message}")
+                    controlButton.isEnabled = true
+                }
+            }
         }
     }
 
@@ -141,6 +157,7 @@ class MainActivity : AppCompatActivity() {
             } else {
                 reportError("未授权VPN权限")
                 updateVpnState(false)
+                controlButton.isEnabled = true
             }
         }
     }
@@ -169,6 +186,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         LocalBroadcastManager.getInstance(this).unregisterReceiver(broadcastReceiver)
+        executor.shutdown()
         super.onDestroy()
     }
 
