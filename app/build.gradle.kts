@@ -31,14 +31,11 @@ android {
 }
 
 dependencies {
-    implementation("androidx.core:core-ktx:1.12.0")
+      implementation("androidx.core:core-ktx:1.12.0")
     implementation("androidx.appcompat:appcompat:1.6.1")
     implementation("com.google.android.material:material:1.11.0")
-    implementation("com.squareup.okhttp3:okhttp:3.12.13")
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")      // 使用最新稳定版
     implementation("com.google.code.gson:gson:2.10.1")
     implementation("androidx.localbroadcastmanager:localbroadcastmanager:1.1.0")
-    // ... 你的其他依赖 ...
-    implementation("com.aliyun.ams:alicloud-android-httpdns:2.6.7")
-    implementation("com.google.code.gson:gson:2.10.1")
 
 }
