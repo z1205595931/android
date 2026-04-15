@@ -36,35 +36,43 @@ class ProxyVpnService : VpnService() {
         return START_STICKY
     }
 
-    private fun startVpn() {
-        try {
-            val builder = Builder()
-                .setSession("IP切换器")
-                .addAddress("10.0.0.2", 32)
-                .addRoute("0.0.0.0", 0)
-                .addDnsServer("8.8.8.8")
-                .addDnsServer("8.8.4.4")
-                .setMtu(1500)
+   private fun startVpn() {
+    try {
+        val builder = Builder()
+            .setSession("IP切换器")
+            .addAddress("10.0.0.2", 32)
+            .addRoute("0.0.0.0", 0)
+            .addDnsServer("8.8.8.8")
+            .addDnsServer("8.8.4.4")
+            .setMtu(1500)
 
-            vpnInterface?.close()
-            vpnInterface = builder.establish()
+        vpnInterface?.close()
+        vpnInterface = builder.establish()
 
-            val tunInput = FileInputStream(vpnInterface!!.fileDescriptor)
-            val tunOutput = FileOutputStream(vpnInterface!!.fileDescriptor)
+        val tunInput = FileInputStream(vpnInterface!!.fileDescriptor)
+        val tunOutput = FileOutputStream(vpnInterface!!.fileDescriptor)
 
-            tun2Socks = Tun2Socks(tunInput, tunOutput, proxyApi, this)
-            tun2Socks?.start()
+        tun2Socks = Tun2Socks(tunInput, tunOutput, proxyApi, this)
+        tun2Socks?.start()
 
-            LocalBroadcastManager.getInstance(this).sendBroadcast(Intent(ACTION_VPN_STARTED))
+        LocalBroadcastManager.getInstance(this).sendBroadcast(Intent(ACTION_VPN_STARTED))
 
-            startScheduledSwitch()
+        startScheduledSwitch()
 
-        } catch (e: Exception) {
-            e.printStackTrace()
-            sendError("VPN 启动失败: ${e.message}")
-            stopSelf()
-        }
+    } catch (e: IllegalArgumentException) {
+        e.printStackTrace()
+        sendError("VPN 参数配置错误: ${e.message}")
+        stopSelf()
+    } catch (e: SecurityException) {
+        e.printStackTrace()
+        sendError("VPN 权限被拒绝，请重新授权")
+        stopSelf()
+    } catch (e: Exception) {
+        e.printStackTrace()
+        sendError("VPN 启动失败: ${e.message}")
+        stopSelf()
     }
+}
 
     private fun startScheduledSwitch() {
         switchTask?.cancel(false)
