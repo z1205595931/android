@@ -18,7 +18,10 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = false
-            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
         }
     }
     compileOptions {
@@ -36,5 +39,6 @@ dependencies {
     implementation("com.google.android.material:material:1.11.0")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("com.google.code.gson:gson:2.10.1")
+    // 注意：localbroadcastmanager 已改用 androidx 版本，语法不变但确保正确
     implementation("androidx.localbroadcastmanager:localbroadcastmanager:1.1.0")
 }
