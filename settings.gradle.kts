@@ -10,10 +10,7 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
-    }
-    repositories {
-        // ... 其他仓库 ...
-        maven { url = uri("https://maven.aliyun.com/repository/public/") }
+        maven { url = uri("https://maven.aliyun.com/repository/public/")}
     }
 }
 
