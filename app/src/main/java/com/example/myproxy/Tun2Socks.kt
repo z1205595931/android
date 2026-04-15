@@ -17,7 +17,6 @@ class Tun2Socks(
 
     @Volatile
     private var running = true
-
     private val currentProxy = AtomicReference<ProxyInfo>()
 
     fun updateProxy(newProxy: ProxyInfo) {
@@ -32,7 +31,6 @@ class Tun2Socks(
                 proxyApi.fetchSingleProxy()
             } catch (e: Exception) {
                 e.printStackTrace()
-                // 发送错误广播
                 LocalBroadcastManager.getInstance(context).sendBroadcast(
                     Intent(ProxyVpnService.ACTION_ERROR).putExtra("error", "初始化代理失败: ${e.message}")
                 )
