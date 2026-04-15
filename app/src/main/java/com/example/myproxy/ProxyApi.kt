@@ -1,5 +1,6 @@
 package com.example.myproxy
 
+import android.content.Context
 import com.google.gson.Gson
 import com.google.gson.annotations.SerializedName
 import okhttp3.OkHttpClient
@@ -33,7 +34,7 @@ data class ProxyData(
     val proxyList: List<ProxyInfo>
 )
 
-class ProxyApi {
+class ProxyApi(private val context: Context) {
     private val client = OkHttpClient.Builder()
         .connectTimeout(10, TimeUnit.SECONDS)
         .readTimeout(10, TimeUnit.SECONDS)
@@ -42,25 +43,30 @@ class ProxyApi {
 
     @Throws(IOException::class)
     fun fetchSingleProxy(): ProxyInfo {
-        // 替换为你的API地址（确保已添加白名单）
-        val apiUrl = "http://v2.api.juliangip.com/company/dynamic/getips?auth_type=2&auto_white=1&filter=1&num=1&pt=2&result_type=json2&trade_no=1452972276467480&sign=f228954613992d388e25979e40d99b5e"
+        // 从 SharedPreferences 获取用户保存的 API 地址
+        val apiUrl = PreferencesManager.getApiUrl(context)
+        if (apiUrl.isBlank()) {
+            throw IOException("API 地址未设置，请在主界面填写")
+        }
 
         val request = Request.Builder()
             .url(apiUrl)
             .build()
 
         client.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) throw IOException("请求失败: ${response.code}")
+            if (!response.isSuccessful) {
+                throw IOException("HTTP 请求失败: ${response.code}")
+            }
             val body = response.body?.string() ?: throw IOException("响应体为空")
 
             val apiResponse = gson.fromJson(body, ApiResponse::class.java)
             if (apiResponse.code != 200) {
-                throw IOException("API错误: ${apiResponse.msg}")
+                throw IOException("API 业务错误: ${apiResponse.msg}")
             }
 
             val proxyList = apiResponse.data.proxyList
             if (proxyList.isEmpty()) {
-                throw IOException("没有可用代理")
+                throw IOException("API 未返回代理数据")
             }
             return proxyList[0]
         }
