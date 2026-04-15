@@ -64,48 +64,36 @@ class MainActivity : AppCompatActivity() {
         whitelistHelpButton = findViewById(R.id.whitelist_help_button)
         controlButton = findViewById(R.id.control_button)
 
-        // 加载已保存的 API URL
-        val savedApiUrl = PreferencesManager.getApiUrl(this)
-        apiUrlEditText.setText(savedApiUrl)
+        apiUrlEditText.setText(PreferencesManager.getApiUrl(this))
 
         saveConfigButton.setOnClickListener {
             val apiUrl = apiUrlEditText.text.toString().trim()
             if (apiUrl.isEmpty()) {
-                Toast.makeText(this, "请输入完整的 API 提取链接", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "请输入API链接", Toast.LENGTH_SHORT).show()
                 return@setOnClickListener
             }
             PreferencesManager.saveApiUrl(this, apiUrl)
-            Toast.makeText(this, "API 链接已保存", Toast.LENGTH_SHORT).show()
-            errorText.text = "状态: API 链接已更新"
-
-            // 如果 VPN 未运行，自动启动
-            if (!isRunning) {
-                startVpn()
-            }
+            Toast.makeText(this, "API已保存", Toast.LENGTH_SHORT).show()
+            errorText.text = "状态: 配置已更新"
+            if (!isRunning) startVpn()
         }
 
         whitelistHelpButton.setOnClickListener {
             AlertDialog.Builder(this)
                 .setTitle("设置白名单")
-                .setMessage("1. 在云手机浏览器访问 ip.sb 获取公网IP\n2. 登录巨量IP官网 -> 产品管理 -> 对应订单 -> 设置白名单\n3. 粘贴IP并保存，等待1-3分钟生效")
+                .setMessage("1. 在浏览器访问 ip.sb 获取本机IP\n2. 登录巨量IP后台 -> 产品管理 -> 对应订单 -> 白名单\n3. 添加IP后等待1-3分钟生效")
                 .setPositiveButton("我知道了", null)
                 .show()
         }
 
         controlButton.setOnClickListener {
-            if (isRunning) {
-                stopVpn()
-            } else {
-                startVpn()
-            }
+            if (isRunning) stopVpn() else startVpn()
         }
 
         Thread.setDefaultUncaughtExceptionHandler { _, e ->
-            val errorMsg = e.stackTraceToString()
-            android.util.Log.e("VPN_CRASH", errorMsg)
             mainHandler.post {
                 errorText.text = "崩溃: ${e.message}"
-                Toast.makeText(this, "应用崩溃: ${e.message}", Toast.LENGTH_LONG).show()
+                Toast.makeText(this, "崩溃: ${e.message}", Toast.LENGTH_LONG).show()
             }
         }
 
@@ -119,29 +107,22 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun startVpn() {
-        errorText.text = "状态: 正在检查 VPN 权限..."
-        try {
-            val intent = VpnService.prepare(this)
-            if (intent != null) {
-                Toast.makeText(this, "请授权 VPN 连接", Toast.LENGTH_SHORT).show()
-                startActivityForResult(intent, VPN_REQUEST_CODE)
-            } else {
-                errorText.text = "状态: 权限已具备，正在启动 VPN 服务..."
-                startVpnService()
-            }
-        } catch (e: Exception) {
-            reportError("VPN 准备失败 - ${e.message}")
+        errorText.text = "状态: 检查权限..."
+        val intent = VpnService.prepare(this)
+        if (intent != null) {
+            startActivityForResult(intent, VPN_REQUEST_CODE)
+        } else {
+            startVpnService()
         }
     }
 
     private fun startVpnService() {
         try {
-            val intent = Intent(this, ProxyVpnService::class.java)
-            startService(intent)
+            startService(Intent(this, ProxyVpnService::class.java))
             updateVpnState(true)
-            Toast.makeText(this, "VPN 服务启动中...", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "VPN启动中...", Toast.LENGTH_SHORT).show()
         } catch (e: Exception) {
-            reportError("无法启动 VPN 服务 - ${e.message}")
+            reportError("启动服务失败: ${e.message}")
         }
     }
 
@@ -149,17 +130,16 @@ class MainActivity : AppCompatActivity() {
         stopService(Intent(this, ProxyVpnService::class.java))
         updateVpnState(false)
         ipText.text = "当前IP: 无"
-        errorText.text = "状态: VPN 已手动断开"
+        errorText.text = "状态: 已断开"
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == VPN_REQUEST_CODE) {
             if (resultCode == Activity.RESULT_OK) {
-                errorText.text = "状态: 用户已授权，正在启动 VPN 服务..."
                 startVpnService()
             } else {
-                reportError("用户未授权 VPN 权限")
+                reportError("未授权VPN权限")
                 updateVpnState(false)
             }
         }
